@@ -1,0 +1,2951 @@
+
+
+# File Converter & Compressor Application with Next.js
+
+I'll help you create a comprehensive file converter and compressor application with all the features you requested. Let's start with a complete plan and implementation.
+
+## 1. Architecture Overview
+
+### Tech Stack
+- **Frontend**: Next.js 14 (App Router)
+- **UI**: Tailwind CSS, Framer Motion, Three.js for 3D elements
+- **Backend**: Next.js API Routes
+- **File Processing**: FFmpeg (for videos), Sharp (for images), JSZip (for ZIP files)
+- **GPU Acceleration**: WebGPU API for supported browsers, server-side GPU processing
+- **State Management**: Zustand
+- **File Upload**: React Dropzone
+- **UI Components**: Radix UI primitives
+- **Database**: PostgreSQL (for user accounts and conversion history)
+- **Authentication**: NextAuth.js
+- **Deployment**: Vercel or Docker
+
+### System Architecture
+```
+┌─────────────────┐    ┌─────────────────┐    ┌─────────────────┐
+│   Client UI     │    │   Next.js API   │    │  Processing     │
+│   (Next.js)     │◄──►│   Routes        │◄──►│  Workers        │
+│                 │    │                 │    │  (GPU enabled)  │
+└─────────────────┘    └─────────────────┘    └─────────────────┘
+         │                       │                       │
+         │                       │                       │
+    ┌─────────┐            ┌──────────────┐      ┌──────────────┐
+    │   S3    │            │  PostgreSQL  │      │   Redis      │
+    │Storage  │            │   Database   │      │   Cache      │
+    └─────────┘            └──────────────┘      └──────────────┘
+```
+
+## 2. Project Structure
+
+```
+file-converter/
+├── app/
+│   ├── (auth)/
+│   │   ├── login/
+│   │   └── register/
+│   ├── dashboard/
+│   │   ├── components/
+│   │   └── page.tsx
+│   ├── converter/
+│   │   ├── components/
+│   │   │   ├── FileUploader.tsx
+│   │   │   ├── ConversionOptions.tsx
+│   │   │   ├── ProgressBar.tsx
+│   │   │   └── ResultDisplay.tsx
+│   │   └── page.tsx
+│   ├── api/
+│   │   ├── convert/
+│   │   │   ├── image/
+│   │   │   ├── video/
+│   │   │   ├── document/
+│   │   │   └── archive/
+│   │   ├── compress/
+│   │   │   ├── image/
+│   │   │   ├── video/
+│   │   │   └── archive/
+│   │   └── upload/
+│   ├── globals.css
+│   ├── layout.tsx
+│   └── page.tsx
+├── components/
+│   ├── ui/
+│   ├── 3d/
+│   │   ├── Background3D.tsx
+│   │   └── File3D.tsx
+│   └── common/
+├── lib/
+│   ├── db.ts
+│   ├── auth.ts
+│   ├── file-processing.ts
+│   └── gpu-acceleration.ts
+├── public/
+├── styles/
+├── types/
+├── utils/
+└── middleware.ts
+```
+
+## 3. UI/UX Design
+
+### Design Principles
+- Modern, clean, enterprise look with dark/light mode toggle
+- 3D GPU-accelerated elements for visual appeal
+- Responsive design for all devices
+- Smooth animations with Framer Motion
+- Intuitive drag-and-drop interface
+
+### Color Scheme
+- Primary: #3B82F6 (Blue)
+- Secondary: #8B5CF6 (Purple)
+- Accent: #10B981 (Green)
+- Dark: #1F2937 (Dark Gray)
+- Light: #F9FAFB (Light Gray)
+
+## 4. Implementation
+
+Let's start implementing the application:
+
+### 4.1 Setup Next.js Project
+
+```bash
+npx create-next-app@latest file-converter --typescript --tailwind --eslint --app --src-dir --import-alias "@/*"
+cd file-converter
+```
+
+Install required dependencies:
+
+```bash
+npm install @radix-ui/react-dialog @radix-ui/react-dropdown-menu @radix-ui/react-progress @radix-ui/react-select @radix-ui/react-tabs @radix-ui/react-toast framer-motion three @types/three zustand react-dropzone next-auth @prisma/client prisma sharp ffmpeg-static jszip lucide-react class-variance-authority clsx tailwind-merge
+```
+
+### 4.2 Database Setup
+
+Create a `prisma/schema.prisma` file:
+
+```prisma
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  image         String?
+  password      String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  
+  conversions   Conversion[]
+  sessions      Session[]
+  accounts      Account[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model Conversion {
+  id          String    @id @default(cuid())
+  userId      String
+  originalName String
+  originalType String
+  originalSize Int
+  newName     String?
+  newType     String?
+  newSize     Int?
+  status      String    @default("pending") // pending, processing, completed, failed
+  options     Json?     // Store conversion options
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+```
+
+Run migrations:
+
+```bash
+npx prisma migrate dev --name init
+```
+
+### 4.3 Authentication Setup
+
+Create `lib/auth.ts`:
+
+```typescript
+import NextAuth from "next-auth"
+import { PrismaAdapter } from "@next-auth/prisma-adapter"
+import GoogleProvider from "next-auth/providers/google"
+import CredentialsProvider from "next-auth/providers/credentials"
+import { prisma } from "./db"
+import bcrypt from "bcryptjs"
+
+export const authOptions = {
+  adapter: PrismaAdapter(prisma),
+  providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID!,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+    }),
+    CredentialsProvider({
+      name: "credentials",
+      credentials: {
+        email: { label: "Email", type: "email" },
+        password: { label: "Password", type: "password" }
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.password) {
+          return null
+        }
+
+        const user = await prisma.user.findUnique({
+          where: { email: credentials.email }
+        })
+
+        if (!user || !user.password) {
+          return null
+        }
+
+        const isPasswordValid = await bcrypt.compare(
+          credentials.password,
+          user.password
+        )
+
+        if (!isPasswordValid) {
+          return null
+        }
+
+        return {
+          id: user.id,
+          email: user.email,
+          name: user.name,
+        }
+      }
+    })
+  ],
+  session: {
+    strategy: "jwt" as const,
+  },
+  callbacks: {
+    async jwt({ token, user }) {
+      if (user) {
+        token.id = user.id
+      }
+      return token
+    },
+    async session({ session, token }) {
+      if (token) {
+        session.user.id = token.id as string
+      }
+      return session
+    }
+  },
+  pages: {
+    signIn: "/login",
+    signUp: "/register",
+  },
+}
+
+export default NextAuth(authOptions)
+```
+
+Create `app/api/auth/[...nextauth]/route.ts`:
+
+```typescript
+import NextAuth from "next-auth"
+import { authOptions } from "@/lib/auth"
+
+const handler = NextAuth(authOptions)
+
+export { handler as GET, handler as POST }
+```
+
+### 4.4 3D Background Component
+
+Create `components/3d/Background3D.tsx`:
+
+```typescript
+"use client"
+
+import { useEffect, useRef, useState } from "react"
+import * as THREE from "three"
+import { useTheme } from "next-themes"
+
+export default function Background3D() {
+  const mountRef = useRef<HTMLDivElement>(null)
+  const [isMounted, setIsMounted] = useState(false)
+  const { theme } = useTheme()
+
+  useEffect(() => {
+    setIsMounted(true)
+    return () => setIsMounted(false)
+  }, [])
+
+  useEffect(() => {
+    if (!isMounted || !mountRef.current) return
+
+    const width = window.innerWidth
+    const height = window.innerHeight
+
+    // Scene setup
+    const scene = new THREE.Scene()
+    const camera = new THREE.PerspectiveCamera(75, width / height, 0.1, 1000)
+    const renderer = new THREE.WebGLRenderer({ alpha: true, antialias: true })
+    
+    renderer.setSize(width, height)
+    renderer.setPixelRatio(window.devicePixelRatio)
+    renderer.setClearColor(0x000000, 0)
+    mountRef.current.appendChild(renderer.domElement)
+
+    // Lighting
+    const ambientLight = new THREE.AmbientLight(0xffffff, 0.5)
+    scene.add(ambientLight)
+    
+    const directionalLight = new THREE.DirectionalLight(0xffffff, 0.5)
+    directionalLight.position.set(0, 1, 1)
+    scene.add(directionalLight)
+
+    // Create floating particles
+    const particlesGeometry = new THREE.BufferGeometry()
+    const particlesCount = 500
+    const posArray = new Float32Array(particlesCount * 3)
+    
+    for(let i = 0; i < particlesCount * 3; i++) {
+      posArray[i] = (Math.random() - 0.5) * 10
+    }
+    
+    particlesGeometry.setAttribute('position', new THREE.BufferAttribute(posArray, 3))
+    
+    const particlesMaterial = new THREE.PointsMaterial({
+      size: 0.05,
+      color: theme === 'dark' ? 0x3b82f6 : 0x8b5cf6,
+      transparent: true,
+      opacity: 0.8,
+      blending: THREE.AdditiveBlending
+    })
+    
+    const particlesMesh = new THREE.Points(particlesGeometry, particlesMaterial)
+    scene.add(particlesMesh)
+
+    // Create floating geometric shapes
+    const geometries = [
+      new THREE.BoxGeometry(0.5, 0.5, 0.5),
+      new THREE.ConeGeometry(0.3, 0.6, 8),
+      new THREE.TorusGeometry(0.3, 0.1, 8, 20),
+      new THREE.OctahedronGeometry(0.4)
+    ]
+    
+    const materials = [
+      new THREE.MeshStandardMaterial({ 
+        color: 0x3b82f6, 
+        metalness: 0.3, 
+        roughness: 0.4,
+        transparent: true,
+        opacity: 0.7
+      }),
+      new THREE.MeshStandardMaterial({ 
+        color: 0x8b5cf6, 
+        metalness: 0.3, 
+        roughness: 0.4,
+        transparent: true,
+        opacity: 0.7
+      }),
+      new THREE.MeshStandardMaterial({ 
+        color: 0x10b981, 
+        metalness: 0.3, 
+        roughness: 0.4,
+        transparent: true,
+        opacity: 0.7
+      })
+    ]
+    
+    const shapes: THREE.Mesh[] = []
+    
+    for (let i = 0; i < 8; i++) {
+      const geometry = geometries[Math.floor(Math.random() * geometries.length)]
+      const material = materials[Math.floor(Math.random() * materials.length)]
+      const shape = new THREE.Mesh(geometry, material)
+      
+      shape.position.x = (Math.random() - 0.5) * 8
+      shape.position.y = (Math.random() - 0.5) * 8
+      shape.position.z = (Math.random() - 0.5) * 8
+      
+      shape.rotation.x = Math.random() * Math.PI
+      shape.rotation.y = Math.random() * Math.PI
+      
+      scene.add(shape)
+      shapes.push(shape)
+    }
+
+    camera.position.z = 5
+
+    // Mouse movement effect
+    let mouseX = 0
+    let mouseY = 0
+    
+    const handleMouseMove = (event: MouseEvent) => {
+      mouseX = (event.clientX / width) * 2 - 1
+      mouseY = -(event.clientY / height) * 2 + 1
+    }
+    
+    window.addEventListener('mousemove', handleMouseMove)
+
+    // Animation
+    const clock = new THREE.Clock()
+    
+    const animate = () => {
+      requestAnimationFrame(animate)
+      
+      const elapsedTime = clock.getElapsedTime()
+      
+      // Rotate particles
+      particlesMesh.rotation.y = elapsedTime * 0.05
+      
+      // Animate shapes
+      shapes.forEach((shape, index) => {
+        shape.rotation.x += 0.005
+        shape.rotation.y += 0.005
+        
+        // Float up and down
+        shape.position.y += Math.sin(elapsedTime + index) * 0.003
+      })
+      
+      // Camera follows mouse slightly
+      camera.position.x += (mouseX * 0.5 - camera.position.x) * 0.05
+      camera.position.y += (mouseY * 0.5 - camera.position.y) * 0.05
+      camera.lookAt(scene.position)
+      
+      renderer.render(scene, camera)
+    }
+    
+    animate()
+
+    // Handle resize
+    const handleResize = () => {
+      const width = window.innerWidth
+      const height = window.innerHeight
+      
+      camera.aspect = width / height
+      camera.updateProjectionMatrix()
+      
+      renderer.setSize(width, height)
+    }
+    
+    window.addEventListener('resize', handleResize)
+
+    // Cleanup
+    return () => {
+      window.removeEventListener('mousemove', handleMouseMove)
+      window.removeEventListener('resize', handleResize)
+      
+      if (mountRef.current && renderer.domElement) {
+        mountRef.current.removeChild(renderer.domElement)
+      }
+      
+      renderer.dispose()
+    }
+  }, [isMounted, theme])
+
+  return (
+    <div 
+      ref={mountRef} 
+      className="fixed inset-0 -z-10 overflow-hidden" 
+      style={{ pointerEvents: 'none' }}
+    />
+  )
+}
+```
+
+### 4.5 File Processing Utilities
+
+Create `lib/file-processing.ts`:
+
+```typescript
+import sharp from 'sharp'
+import ffmpeg from 'fluent-ffmpeg'
+import ffmpegStatic from 'ffmpeg-static'
+import JSZip from 'jszip'
+import path from 'path'
+import fs from 'fs/promises'
+
+// Set FFmpeg path
+ffmpeg.setFfmpegPath(ffmpegStatic as string)
+
+export interface ConversionOptions {
+  format?: string
+  quality?: number
+  width?: number
+  height?: number
+  compression?: number
+  fps?: number
+  bitrate?: string
+}
+
+export interface ConversionResult {
+  success: boolean
+  outputPath?: string
+  error?: string
+  originalSize?: number
+  newSize?: number
+}
+
+// Image processing
+export async function processImage(
+  inputPath: string,
+  outputPath: string,
+  options: ConversionOptions
+): Promise<ConversionResult> {
+  try {
+    const inputBuffer = await fs.readFile(inputPath)
+    const originalSize = inputBuffer.length
+
+    let sharpInstance = sharp(inputBuffer)
+
+    // Resize if dimensions are provided
+    if (options.width || options.height) {
+      sharpInstance = sharpInstance.resize(
+        options.width,
+        options.height,
+        { fit: 'inside', withoutEnlargement: true }
+      )
+    }
+
+    // Set format
+    if (options.format) {
+      sharpInstance = sharpInstance.toFormat(options.format as any, {
+        quality: options.quality || 80,
+        compressionLevel: options.compression || 6
+      })
+    } else {
+      // Default to JPEG with quality
+      sharpInstance = sharpInstance.jpeg({ quality: options.quality || 80 })
+    }
+
+    const outputBuffer = await sharpInstance.toBuffer()
+    await fs.writeFile(outputPath, outputBuffer)
+
+    return {
+      success: true,
+      outputPath,
+      originalSize,
+      newSize: outputBuffer.length
+    }
+  } catch (error) {
+    console.error('Image processing error:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }
+  }
+}
+
+// Video processing
+export async function processVideo(
+  inputPath: string,
+  outputPath: string,
+  options: ConversionOptions
+): Promise<ConversionResult> {
+  return new Promise((resolve) => {
+    try {
+      // Get original file size
+      fs.stat(inputPath)
+        .then(stats => {
+          const originalSize = stats.size
+
+          let command = ffmpeg(inputPath)
+
+          // Set output format
+          if (options.format) {
+            command = command.format(options.format)
+          }
+
+          // Set video codec
+          command = command.videoCodec('libx264')
+
+          // Set dimensions
+          if (options.width || options.height) {
+            command = command.size(`${options.width || '?'}x${options.height || '?'}`)
+          }
+
+          // Set quality
+          if (options.quality) {
+            command = command.videoBitrate(`${options.quality}k`)
+          }
+
+          // Set framerate
+          if (options.fps) {
+            command = command.fps(options.fps)
+          }
+
+          // Set bitrate
+          if (options.bitrate) {
+            command = command.bitrate(options.bitrate)
+          }
+
+          command
+            .output(outputPath)
+            .on('end', async () => {
+              try {
+                const outputStats = await fs.stat(outputPath)
+                resolve({
+                  success: true,
+                  outputPath,
+                  originalSize,
+                  newSize: outputStats.size
+                })
+              } catch (error) {
+                resolve({
+                  success: false,
+                  error: 'Failed to get output file stats'
+                })
+              }
+            })
+            .on('error', (err) => {
+              console.error('Video processing error:', err)
+              resolve({
+                success: false,
+                error: err.message
+              })
+            })
+            .run()
+        })
+        .catch(error => {
+          console.error('Failed to get input file stats:', error)
+          resolve({
+            success: false,
+            error: 'Failed to get input file stats'
+          })
+        })
+    } catch (error) {
+      console.error('Video processing setup error:', error)
+      resolve({
+        success: false,
+        error: error instanceof Error ? error.message : 'Unknown error'
+      })
+    }
+  })
+}
+
+// Archive processing
+export async function processArchive(
+  inputPath: string,
+  outputPath: string,
+  options: ConversionOptions
+): Promise<ConversionResult> {
+  try {
+    const inputBuffer = await fs.readFile(inputPath)
+    const originalSize = inputBuffer.length
+
+    const zip = new JSZip()
+    await zip.loadAsync(inputBuffer)
+
+    // If compression level is specified, we need to recreate the zip with new compression
+    if (options.compression !== undefined) {
+      const newZip = new JSZip()
+      
+      // Add all files with new compression level
+      for (const [filename, file] of Object.entries(zip.files)) {
+        if (!file.dir) {
+          const content = await file.async('uint8array')
+          newZip.file(filename, content, { compression: 'DEFLATE', compressionOptions: { level: options.compression } })
+        }
+      }
+      
+      const outputBuffer = await newZip.generateAsync({ type: 'uint8array' })
+      await fs.writeFile(outputPath, Buffer.from(outputBuffer))
+      
+      return {
+        success: true,
+        outputPath,
+        originalSize,
+        newSize: outputBuffer.length
+      }
+    } else {
+      // Just copy the file if no compression options
+      await fs.writeFile(outputPath, inputBuffer)
+      
+      return {
+        success: true,
+        outputPath,
+        originalSize,
+        newSize: originalSize
+      }
+    }
+  } catch (error) {
+    console.error('Archive processing error:', error)
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : 'Unknown error'
+    }
+  }
+}
+
+// Get file type
+export function getFileType(filename: string): 'image' | 'video' | 'archive' | 'document' | 'other' {
+  const ext = path.extname(filename).toLowerCase()
+  
+  const imageExts = ['.jpg', '.jpeg', '.png', '.gif', '.bmp', '.webp', '.tiff', '.svg']
+  const videoExts = ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv', '.m4v']
+  const archiveExts = ['.zip', '.rar', '.7z', '.tar', '.gz']
+  const documentExts = ['.pdf', '.doc', '.docx', '.xls', '.xlsx', '.ppt', '.pptx', '.txt']
+  
+  if (imageExts.includes(ext)) return 'image'
+  if (videoExts.includes(ext)) return 'video'
+  if (archiveExts.includes(ext)) return 'archive'
+  if (documentExts.includes(ext)) return 'document'
+  
+  return 'other'
+}
+
+// Get supported output formats for each file type
+export function getSupportedFormats(fileType: string): string[] {
+  switch (fileType) {
+    case 'image':
+      return ['jpg', 'jpeg', 'png', 'webp', 'gif', 'bmp', 'tiff']
+    case 'video':
+      return ['mp4', 'avi', 'mov', 'webm', 'mkv', 'flv']
+    case 'archive':
+      return ['zip']
+    case 'document':
+      return ['pdf']
+    default:
+      return []
+  }
+}
+```
+
+### 4.6 GPU Acceleration Utilities
+
+Create `lib/gpu-acceleration.ts`:
+
+```typescript
+// Client-side GPU acceleration using WebGPU
+export async function checkWebGPUSupport(): Promise<boolean> {
+  if (!navigator.gpu) {
+    return false
+  }
+  
+  try {
+    const adapter = await navigator.gpu.requestAdapter()
+    return !!adapter
+  } catch (e) {
+    return false
+  }
+}
+
+// Server-side GPU acceleration detection
+export function checkServerGPU(): boolean {
+  try {
+    // This would need to be implemented based on your server environment
+    // For example, checking for NVIDIA GPUs via nvidia-smi or other methods
+    return process.env.GPU_AVAILABLE === 'true'
+  } catch (e) {
+    return false
+  }
+}
+
+// Client-side image processing with WebGPU (simplified example)
+export async function processImageWithGPU(
+  imageData: ImageData,
+  width: number,
+  height: number,
+  options: { brightness?: number; contrast?: number } = {}
+): Promise<ImageData> {
+  if (!navigator.gpu) {
+    throw new Error('WebGPU not supported')
+  }
+  
+  const adapter = await navigator.gpu.requestAdapter()
+  if (!adapter) {
+    throw new Error('No appropriate GPUAdapter found')
+  }
+  
+  const device = await adapter.requestDevice()
+  
+  // Create shader module
+  const shaderModule = device.createShaderModule({
+    code: `
+      @group(0) @binding(0) var<uniform> params: vec2f;
+      @group(0) @binding(1) var<storage, read> inputImage: array<vec4f>;
+      @group(0) @binding(2) var<storage, read_write> outputImage: array<vec4f>;
+      
+      @compute @workgroup_size(64)
+      fn main(@builtin(global_invocation_id) global_id: vec3<u32>) {
+        let index = global_id.x;
+        if (index >= arrayLength(&outputImage)) {
+          return;
+        }
+        
+        var color = inputImage[index];
+        color.rgb = color.rgb * params.x + params.y;
+        outputImage[index] = color;
+      }
+    `
+  });
+  
+  // Create pipeline
+  const pipeline = device.createComputePipeline({
+    layout: 'auto',
+    compute: {
+      module: shaderModule,
+      entryPoint: 'main',
+    },
+  });
+  
+  // Create buffers
+  const imageSize = width * height;
+  const inputBuffer = device.createBuffer({
+    size: imageSize * 4 * 4, // 4 components (RGBA) * 4 bytes each
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST,
+    mappedAtCreation: true,
+  });
+  
+  // Copy image data to buffer
+  const inputArray = new Uint8Array(imageData.data);
+  new Uint8Array(inputBuffer.getMappedRange()).set(inputArray);
+  inputBuffer.unmap();
+  
+  const outputBuffer = device.createBuffer({
+    size: imageSize * 4 * 4,
+    usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC,
+  });
+  
+  // Create uniform buffer for parameters
+  const uniformBuffer = device.createBuffer({
+    size: 2 * 4, // 2 floats (brightness, contrast) * 4 bytes each
+    usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST,
+  });
+  
+  // Set parameters
+  const params = new Float32Array([
+    options.contrast || 1.0,
+    options.brightness || 0.0,
+  ]);
+  device.queue.writeBuffer(uniformBuffer, 0, params);
+  
+  // Create bind group
+  const bindGroup = device.createBindGroup({
+    layout: pipeline.getBindGroupLayout(0),
+    entries: [
+      { binding: 0, resource: { buffer: uniformBuffer } },
+      { binding: 1, resource: { buffer: inputBuffer } },
+      { binding: 2, resource: { buffer: outputBuffer } },
+    ],
+  });
+  
+  // Execute shader
+  const commandEncoder = device.createCommandEncoder();
+  const passEncoder = commandEncoder.beginComputePass();
+  passEncoder.setPipeline(pipeline);
+  passEncoder.setBindGroup(0, bindGroup);
+  passEncoder.dispatchWorkgroups(Math.ceil(imageSize / 64));
+  passEncoder.end();
+  
+  // Read back results
+  const readbackBuffer = device.createBuffer({
+    size: imageSize * 4 * 4,
+    usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ,
+  });
+  
+  commandEncoder.copyBufferToBuffer(outputBuffer, 0, readbackBuffer, 0, imageSize * 4 * 4);
+  
+  device.queue.submit([commandEncoder.finish()]);
+  
+  // Wait for completion and get results
+  await readbackBuffer.mapAsync(GPUMapMode.READ);
+  const resultArray = new Uint8Array(readbackBuffer.getMappedRange());
+  
+  // Create new ImageData
+  const outputImageData = new ImageData(
+    new Uint8ClampedArray(resultArray),
+    width,
+    height
+  );
+  
+  readbackBuffer.unmap();
+  
+  return outputImageData;
+}
+```
+
+### 4.7 File Uploader Component
+
+Create `app/converter/components/FileUploader.tsx`:
+
+```typescript
+"use client"
+
+import { useCallback, useState } from 'react'
+import { useDropzone } from 'react-dropzone'
+import { motion, AnimatePresence } from 'framer-motion'
+import { File, X, Upload, Image, Video, Archive, FileText } from 'lucide-react'
+import { getFileType } from '@/lib/file-processing'
+
+interface FileUploaderProps {
+  onFilesChange: (files: File[]) => void
+  maxFiles?: number
+  maxSize?: number // in bytes
+}
+
+export default function FileUploader({ onFilesChange, maxFiles = 10, maxSize = 100 * 1024 * 1024 }: FileUploaderProps) {
+  const [files, setFiles] = useState<File[]>([])
+  const [error, setError] = useState<string | null>(null)
+
+  const onDrop = useCallback((acceptedFiles: File[], fileRejections: any[]) => {
+    setError(null)
+    
+    if (fileRejections.length > 0) {
+      setError('Some files were rejected. Please check file size and type.')
+      return
+    }
+    
+    const newFiles = [...files, ...acceptedFiles].slice(0, maxFiles)
+    setFiles(newFiles)
+    onFilesChange(newFiles)
+  }, [files, maxFiles, onFilesChange])
+
+  const removeFile = (index: number) => {
+    const newFiles = files.filter((_, i) => i !== index)
+    setFiles(newFiles)
+    onFilesChange(newFiles)
+  }
+
+  const { getRootProps, getInputProps, isDragActive } = useDropzone({
+    onDrop,
+    accept: {
+      'image/*': ['.jpeg', '.jpg', '.png', '.gif', '.webp', '.bmp', '.tiff'],
+      'video/*': ['.mp4', '.avi', '.mov', '.wmv', '.flv', '.webm', '.mkv', '.m4v'],
+      'application/zip': ['.zip'],
+      'application/pdf': ['.pdf'],
+      'application/msword': ['.doc'],
+      'application/vnd.openxmlformats-officedocument.wordprocessingml.document': ['.docx'],
+      'application/vnd.ms-excel': ['.xls'],
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet': ['.xlsx'],
+      'application/vnd.ms-powerpoint': ['.ppt'],
+      'application/vnd.openxmlformats-officedocument.presentationml.presentation': ['.pptx'],
+      'text/plain': ['.txt']
+    },
+    maxSize,
+    multiple: true
+  })
+
+  const getFileIcon = (file: File) => {
+    const type = getFileType(file.name)
+    
+    switch (type) {
+      case 'image':
+        return <Image className="w-5 h-5" />
+      case 'video':
+        return <Video className="w-5 h-5" />
+      case 'archive':
+        return <Archive className="w-5 h-5" />
+      case 'document':
+        return <FileText className="w-5 h-5" />
+      default:
+        return <File className="w-5 h-5" />
+    }
+  }
+
+  const formatFileSize = (bytes: number) => {
+    if (bytes === 0) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  return (
+    <div className="w-full">
+      <div
+        {...getRootProps()}
+        className={`border-2 border-dashed rounded-lg p-8 text-center cursor-pointer transition-colors ${
+          isDragActive
+            ? 'border-blue-500 bg-blue-50 dark:bg-blue-950/20'
+            : 'border-gray-300 dark:border-gray-700 hover:border-gray-400 dark:hover:border-gray-600'
+        }`}
+      >
+        <input {...getInputProps()} />
+        <motion.div
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.3 }}
+        >
+          <Upload className="mx-auto h-12 w-12 text-gray-400 mb-4" />
+          <p className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-2">
+            {isDragActive ? 'Drop files here' : 'Drag & drop files here, or click to select files'}
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Supported formats: Images, Videos, Archives, Documents
+          </p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-2">
+            Max file size: {formatFileSize(maxSize)} | Max files: {maxFiles}
+          </p>
+        </motion.div>
+      </div>
+
+      {error && (
+        <motion.div
+          initial={{ opacity: 0, y: -10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="mt-4 p-3 bg-red-50 dark:bg-red-950/20 border border-red-200 dark:border-red-800 rounded-md"
+        >
+          <p className="text-sm text-red-600 dark:text-red-400">{error}</p>
+        </motion.div>
+      )}
+
+      <AnimatePresence>
+        {files.length > 0 && (
+          <motion.div
+            initial={{ opacity: 0, height: 0 }}
+            animate={{ opacity: 1, height: 'auto' }}
+            exit={{ opacity: 0, height: 0 }}
+            className="mt-6"
+          >
+            <h3 className="text-lg font-medium text-gray-900 dark:text-gray-100 mb-3">
+              Selected Files ({files.length})
+            </h3>
+            <div className="space-y-2">
+              {files.map((file, index) => (
+                <motion.div
+                  key={`${file.name}-${index}`}
+                  initial={{ opacity: 0, x: -20 }}
+                  animate={{ opacity: 1, x: 0 }}
+                  exit={{ opacity: 0, x: 20 }}
+                  transition={{ duration: 0.2 }}
+                  className="flex items-center justify-between p-3 bg-white dark:bg-gray-800 rounded-md shadow-sm border border-gray-200 dark:border-gray-700"
+                >
+                  <div className="flex items-center space-x-3">
+                    <div className="text-blue-500 dark:text-blue-400">
+                      {getFileIcon(file)}
+                    </div>
+                    <div>
+                      <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate max-w-xs">
+                        {file.name}
+                      </p>
+                      <p className="text-xs text-gray-500 dark:text-gray-400">
+                        {formatFileSize(file.size)}
+                      </p>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => removeFile(index)}
+                    className="p-1 rounded-full hover:bg-gray-100 dark:hover:bg-gray-700 transition-colors"
+                  >
+                    <X className="w-4 h-4 text-gray-500 dark:text-gray-400" />
+                  </button>
+                </motion.div>
+              ))}
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  )
+}
+```
+
+### 4.8 Conversion Options Component
+
+Create `app/converter/components/ConversionOptions.tsx`:
+
+```typescript
+"use client"
+
+import { useState, useEffect } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { File, Settings, Download, Zap } from 'lucide-react'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+import { Slider } from '@/components/ui/slider'
+import { Switch } from '@/components/ui/switch'
+import { Button } from '@/components/ui/button'
+import { getFileType, getSupportedFormats } from '@/lib/file-processing'
+import { checkWebGPUSupport } from '@/lib/gpu-acceleration'
+
+interface ConversionOptionsProps {
+  files: File[]
+  onConvert: (options: any) => void
+  isConverting: boolean
+}
+
+export default function ConversionOptions({ files, onConvert, isConverting }: ConversionOptionsProps) {
+  const [outputFormat, setOutputFormat] = useState<string>('')
+  const [quality, setQuality] = useState<number>(80)
+  const [compression, setCompression] = useState<number>(6)
+  const [resize, setResize] = useState<boolean>(false)
+  const [width, setWidth] = useState<number>(1920)
+  const [height, setHeight] = useState<number>(1080)
+  const [gpuAcceleration, setGpuAcceleration] = useState<boolean>(false)
+  const [gpuSupported, setGpuSupported] = useState<boolean>(false)
+
+  useEffect(() => {
+    // Check if WebGPU is supported
+    checkWebGPUSupport().then(supported => {
+      setGpuSupported(supported)
+      if (supported) {
+        setGpuAcceleration(true)
+      }
+    })
+  }, [])
+
+  useEffect(() => {
+    if (files.length > 0) {
+      const fileType = getFileType(files[0].name)
+      const supportedFormats = getSupportedFormats(fileType)
+      if (supportedFormats.length > 0) {
+        setOutputFormat(supportedFormats[0])
+      }
+    }
+  }, [files])
+
+  const handleConvert = () => {
+    const options = {
+      outputFormat,
+      quality,
+      compression,
+      resize,
+      width,
+      height,
+      gpuAcceleration
+    }
+    onConvert(options)
+  }
+
+  if (files.length === 0) {
+    return (
+      <motion.div
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="flex flex-col items-center justify-center h-64 text-gray-500 dark:text-gray-400"
+      >
+        <File className="w-16 h-16 mb-4 text-gray-300 dark:text-gray-600" />
+        <p className="text-lg font-medium">No files selected</p>
+        <p className="text-sm">Upload files to see conversion options</p>
+      </motion.div>
+    )
+  }
+
+  const fileType = getFileType(files[0].name)
+  const supportedFormats = getSupportedFormats(fileType)
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6"
+    >
+      <div className="flex items-center mb-6">
+        <Settings className="w-5 h-5 mr-2 text-blue-500 dark:text-blue-400" />
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+          Conversion Options
+        </h2>
+      </div>
+
+      <Tabs defaultValue="format" className="w-full">
+        <TabsList className="grid w-full grid-cols-3">
+          <TabsTrigger value="format">Format</TabsTrigger>
+          <TabsTrigger value="quality">Quality</TabsTrigger>
+          <TabsTrigger value="advanced">Advanced</TabsTrigger>
+        </TabsList>
+        
+        <TabsContent value="format" className="space-y-4">
+          <div>
+            <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">
+              Output Format
+            </label>
+            <Select value={outputFormat} onValueChange={setOutputFormat}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select format" />
+              </SelectTrigger>
+              <SelectContent>
+                {supportedFormats.map(format => (
+                  <SelectItem key={format} value={format}>
+                    {format.toUpperCase()}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+        </TabsContent>
+        
+        <TabsContent value="quality" className="space-y-4">
+          {(fileType === 'image' || fileType === 'video') && (
+            <div>
+              <div className="flex justify-between mb-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Quality
+                </label>
+                <span className="text-sm text-gray-500 dark:text-gray-400">{quality}%</span>
+              </div>
+              <Slider
+                value={[quality]}
+                onValueChange={(value) => setQuality(value[0])}
+                max={100}
+                min={1}
+                step={1}
+                className="w-full"
+              />
+            </div>
+          )}
+          
+          {fileType === 'archive' && (
+            <div>
+              <div className="flex justify-between mb-2">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Compression Level
+                </label>
+                <span className="text-sm text-gray-500 dark:text-gray-400">{compression}</span>
+              </div>
+              <Slider
+                value={[compression]}
+                onValueChange={(value) => setCompression(value[0])}
+                max={9}
+                min={0}
+                step={1}
+                className="w-full"
+              />
+            </div>
+          )}
+        </TabsContent>
+        
+        <TabsContent value="advanced" className="space-y-4">
+          {(fileType === 'image' || fileType === 'video') && (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between">
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  Resize
+                </label>
+                <Switch
+                  checked={resize}
+                  onCheckedChange={setResize}
+                />
+              </div>
+              
+              <AnimatePresence>
+                {resize && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="space-y-4"
+                  >
+                    <div>
+                      <div className="flex justify-between mb-2">
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Width
+                        </label>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">{width}px</span>
+                      </div>
+                      <Slider
+                        value={[width]}
+                        onValueChange={(value) => setWidth(value[0])}
+                        max={4096}
+                        min={100}
+                        step={10}
+                        className="w-full"
+                      />
+                    </div>
+                    
+                    <div>
+                      <div className="flex justify-between mb-2">
+                        <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                          Height
+                        </label>
+                        <span className="text-sm text-gray-500 dark:text-gray-400">{height}px</span>
+                      </div>
+                      <Slider
+                        value={[height]}
+                        onValueChange={(value) => setHeight(value[0])}
+                        max={4096}
+                        min={100}
+                        step={10}
+                        className="w-full"
+                      />
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+            </div>
+          )}
+          
+          {gpuSupported && (
+            <div className="flex items-center justify-between">
+              <div className="flex items-center">
+                <Zap className="w-4 h-4 mr-2 text-yellow-500" />
+                <label className="text-sm font-medium text-gray-700 dark:text-gray-300">
+                  GPU Acceleration
+                </label>
+              </div>
+              <Switch
+                checked={gpuAcceleration}
+                onCheckedChange={setGpuAcceleration}
+              />
+            </div>
+          )}
+        </TabsContent>
+      </Tabs>
+      
+      <div className="mt-6 flex justify-end">
+        <Button
+          onClick={handleConvert}
+          disabled={isConverting}
+          className="bg-blue-600 hover:bg-blue-700 text-white"
+        >
+          {isConverting ? (
+            <>
+              <motion.div
+                className="w-4 h-4 mr-2 rounded-full border-2 border-white border-t-transparent"
+                animate={{ rotate: 360 }}
+                transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+              />
+              Processing...
+            </>
+          ) : (
+            <>
+              <Download className="w-4 h-4 mr-2" />
+              Convert {files.length} {files.length === 1 ? 'File' : 'Files'}
+            </>
+          )}
+        </Button>
+      </div>
+    </motion.div>
+  )
+}
+```
+
+### 4.9 Progress Bar Component
+
+Create `app/converter/components/ProgressBar.tsx`:
+
+```typescript
+"use client"
+
+import { motion } from 'framer-motion'
+import { CheckCircle, XCircle, AlertCircle } from 'lucide-react'
+
+interface ConversionProgress {
+  id: string
+  filename: string
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  progress: number
+  error?: string
+  originalSize?: number
+  newSize?: number
+}
+
+interface ProgressBarProps {
+  conversions: ConversionProgress[]
+}
+
+export default function ProgressBar({ conversions }: ProgressBarProps) {
+  const formatFileSize = (bytes?: number) => {
+    if (!bytes) return '0 Bytes'
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'completed':
+        return <CheckCircle className="w-5 h-5 text-green-500" />
+      case 'failed':
+        return <XCircle className="w-5 h-5 text-red-500" />
+      case 'processing':
+        return (
+          <motion.div
+            className="w-5 h-5 rounded-full border-2 border-blue-500 border-t-transparent"
+            animate={{ rotate: 360 }}
+            transition={{ duration: 1, repeat: Infinity, ease: "linear" }}
+          />
+        )
+      default:
+        return <AlertCircle className="w-5 h-5 text-gray-400" />
+    }
+  }
+
+  if (conversions.length === 0) {
+    return null
+  }
+
+  return (
+    <div className="space-y-4">
+      {conversions.map((conversion) => (
+        <motion.div
+          key={conversion.id}
+          initial={{ opacity: 0, y: 10 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-4"
+        >
+          <div className="flex items-center justify-between mb-2">
+            <div className="flex items-center">
+              {getStatusIcon(conversion.status)}
+              <span className="ml-2 text-sm font-medium text-gray-900 dark:text-gray-100 truncate max-w-xs">
+                {conversion.filename}
+              </span>
+            </div>
+            <span className="text-xs text-gray-500 dark:text-gray-400">
+              {conversion.progress}%
+            </span>
+          </div>
+          
+          <div className="w-full bg-gray-200 dark:bg-gray-700 rounded-full h-2 mb-2">
+            <motion.div
+              className="bg-blue-600 h-2 rounded-full"
+              initial={{ width: 0 }}
+              animate={{ width: `${conversion.progress}%` }}
+              transition={{ duration: 0.3 }}
+            />
+          </div>
+          
+          {conversion.error && (
+            <motion.div
+              initial={{ opacity: 0, height: 0 }}
+              animate={{ opacity: 1, height: 'auto' }}
+              className="mt-2 p-2 bg-red-50 dark:bg-red-950/20 rounded"
+            >
+              <p className="text-xs text-red-600 dark:text-red-400">{conversion.error}</p>
+            </motion.div>
+          )}
+          
+          {conversion.status === 'completed' && conversion.originalSize && conversion.newSize && (
+            <div className="flex justify-between mt-2 text-xs text-gray-500 dark:text-gray-400">
+              <span>Original: {formatFileSize(conversion.originalSize)}</span>
+              <span>New: {formatFileSize(conversion.newSize)}</span>
+              <span>
+                Saved: {Math.round((1 - conversion.newSize / conversion.originalSize) * 100)}%
+              </span>
+            </div>
+          )}
+        </motion.div>
+      ))}
+    </div>
+  )
+}
+```
+
+### 4.10 Result Display Component
+
+Create `app/converter/components/ResultDisplay.tsx`:
+
+```typescript
+"use client"
+
+import { useState } from 'react'
+import { motion, AnimatePresence } from 'framer-motion'
+import { Download, Share2, Trash2, Eye, FileIcon } from 'lucide-react'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent } from '@/components/ui/card'
+
+interface ConversionResult {
+  id: string
+  filename: string
+  originalFilename: string
+  url: string
+  size: number
+  originalSize: number
+  type: string
+}
+
+interface ResultDisplayProps {
+  results: ConversionResult[]
+  onClear: () => void
+  onDownload: (id: string) => void
+  onPreview: (id: string) => void
+}
+
+export default function ResultDisplay({ results, onClear, onDownload, onPreview }: ResultDisplayProps) {
+  const [selectedResults, setSelectedResults] = useState<string[]>([])
+  const [viewMode, setViewMode] = useState<'grid' | 'list'>('grid')
+
+  const formatFileSize = (bytes: number) => {
+    const k = 1024
+    const sizes = ['Bytes', 'KB', 'MB', 'GB']
+    const i = Math.floor(Math.log(bytes) / Math.log(k))
+    return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i]
+  }
+
+  const toggleSelection = (id: string) => {
+    setSelectedResults(prev => 
+      prev.includes(id) 
+        ? prev.filter(resultId => resultId !== id)
+        : [...prev, id]
+    )
+  }
+
+  const selectAll = () => {
+    if (selectedResults.length === results.length) {
+      setSelectedResults([])
+    } else {
+      setSelectedResults(results.map(result => result.id))
+    }
+  }
+
+  const downloadSelected = () => {
+    selectedResults.forEach(id => onDownload(id))
+  }
+
+  const getFileIcon = (type: string) => {
+    if (type.startsWith('image/')) {
+      return <img src="/icons/image.svg" alt="Image" className="w-8 h-8" />
+    } else if (type.startsWith('video/')) {
+      return <img src="/icons/video.svg" alt="Video" className="w-8 h-8" />
+    } else if (type === 'application/zip') {
+      return <img src="/icons/archive.svg" alt="Archive" className="w-8 h-8" />
+    } else {
+      return <FileIcon className="w-8 h-8 text-gray-400" />
+    }
+  }
+
+  if (results.length === 0) {
+    return null
+  }
+
+  return (
+    <motion.div
+      initial={{ opacity: 0, y: 20 }}
+      animate={{ opacity: 1, y: 0 }}
+      transition={{ duration: 0.3 }}
+      className="mt-8"
+    >
+      <div className="flex items-center justify-between mb-6">
+        <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
+          Conversion Results ({results.length})
+        </h2>
+        
+        <div className="flex items-center space-x-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={selectAll}
+          >
+            {selectedResults.length === results.length ? 'Deselect All' : 'Select All'}
+          </Button>
+          
+          {selectedResults.length > 0 && (
+            <Button
+              size="sm"
+              onClick={downloadSelected}
+              className="bg-blue-600 hover:bg-blue-700 text-white"
+            >
+              <Download className="w-4 h-4 mr-1" />
+              Download Selected ({selectedResults.length})
+            </Button>
+          )}
+          
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={onClear}
+          >
+            <Trash2 className="w-4 h-4 mr-1" />
+            Clear All
+          </Button>
+        </div>
+      </div>
+
+      <AnimatePresence>
+        {viewMode === 'grid' ? (
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+            {results.map((result) => (
+              <motion.div
+                key={result.id}
+                initial={{ opacity: 0, scale: 0.9 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.9 }}
+                transition={{ duration: 0.2 }}
+              >
+                <Card className={`overflow-hidden cursor-pointer transition-all ${
+                  selectedResults.includes(result.id) 
+                    ? 'ring-2 ring-blue-500' 
+                    : 'hover:shadow-md'
+                }`}
+                onClick={() => toggleSelection(result.id)}
+              >
+                  <CardContent className="p-4">
+                    <div className="flex justify-between items-start mb-3">
+                      <div className="w-12 h-12 bg-gray-100 dark:bg-gray-800 rounded-md flex items-center justify-center">
+                        {getFileIcon(result.type)}
+                      </div>
+                      
+                      <div className="flex items-center space-x-1">
+                        {result.type.startsWith('image/') && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onPreview(result.id)
+                            }}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        )}
+                        
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onDownload(result.id)
+                          }}
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                    
+                    <h3 className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate mb-1">
+                      {result.filename}
+                    </h3>
+                    
+                    <div className="text-xs text-gray-500 dark:text-gray-400 space-y-1">
+                      <div className="flex justify-between">
+                        <span>Size:</span>
+                        <span>{formatFileSize(result.size)}</span>
+                      </div>
+                      
+                      <div className="flex justify-between">
+                        <span>Compressed:</span>
+                        <span>
+                          {Math.round((1 - result.size / result.originalSize) * 100)}%
+                        </span>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {results.map((result) => (
+              <motion.div
+                key={result.id}
+                initial={{ opacity: 0, x: -20 }}
+                animate={{ opacity: 1, x: 0 }}
+                exit={{ opacity: 0, x: 20 }}
+                transition={{ duration: 0.2 }}
+              >
+                <Card className={`overflow-hidden cursor-pointer transition-all ${
+                  selectedResults.includes(result.id) 
+                    ? 'ring-2 ring-blue-500' 
+                    : 'hover:shadow-md'
+                }`}
+                onClick={() => toggleSelection(result.id)}
+                >
+                  <CardContent className="p-4">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center space-x-3">
+                        <div className="w-10 h-10 bg-gray-100 dark:bg-gray-800 rounded-md flex items-center justify-center">
+                          {getFileIcon(result.type)}
+                        </div>
+                        
+                        <div>
+                          <h3 className="font-medium text-sm text-gray-900 dark:text-gray-100 truncate">
+                            {result.filename}
+                          </h3>
+                          <div className="text-xs text-gray-500 dark:text-gray-400">
+                            {formatFileSize(result.size)} • 
+                            {Math.round((1 - result.size / result.originalSize) * 100)}% compressed
+                          </div>
+                        </div>
+                      </div>
+                      
+                      <div className="flex items-center space-x-1">
+                        {result.type.startsWith('image/') && (
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              onPreview(result.id)
+                            }}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Button>
+                        )}
+                        
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            onDownload(result.id)
+                          }}
+                        >
+                          <Download className="w-4 h-4" />
+                        </Button>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              </motion.div>
+            ))}
+          </div>
+        )}
+      </AnimatePresence>
+    </motion.div>
+  )
+}
+```
+
+### 4.11 Main Converter Page
+
+Create `app/converter/page.tsx`:
+
+```typescript
+"use client"
+
+import { useState, useEffect, useRef } from 'react'
+import { motion } from 'framer-motion'
+import { useSession } from 'next-auth/react'
+import { useRouter } from 'next/navigation'
+import { toast } from 'react-hot-toast'
+
+import FileUploader from './components/FileUploader'
+import ConversionOptions from './components/ConversionOptions'
+import ProgressBar from './components/ProgressBar'
+import ResultDisplay from './components/ResultDisplay'
+
+import Background3D from '@/components/3d/Background3D'
+import { processImage, processVideo, processArchive, getFileType } from '@/lib/file-processing'
+
+interface ConversionProgress {
+  id: string
+  filename: string
+  status: 'pending' | 'processing' | 'completed' | 'failed'
+  progress: number
+  error?: string
+  originalSize?: number
+  newSize?: number
+}
+
+interface ConversionResult {
+  id: string
+  filename: string
+  originalFilename: string
+  url: string
+  size: number
+  originalSize: number
+  type: string
+}
+
+export default function ConverterPage() {
+  const { data: session, status } = useSession()
+  const router = useRouter()
+  
+  const [files, setFiles] = useState<File[]>([])
+  const [conversions, setConversions] = useState<ConversionProgress[]>([])
+  const [results, setResults] = useState<ConversionResult[]>([])
+  const [isConverting, setIsConverting] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
+  
+  useEffect(() => {
+    if (status === 'unauthenticated') {
+      router.push('/login')
+    }
+  }, [status, router])
+
+  const handleFilesChange = (newFiles: File[]) => {
+    setFiles(newFiles)
+    setResults([])
+  }
+
+  const handleConvert = async (options: any) => {
+    if (files.length === 0) return
+    
+    setIsConverting(true)
+    setResults([])
+    
+    // Initialize conversion progress for each file
+    const newConversions: ConversionProgress[] = files.map(file => ({
+      id: Math.random().toString(36).substring(2, 9),
+      filename: file.name,
+      status: 'pending',
+      progress: 0,
+      originalSize: file.size
+    }))
+    
+    setConversions(newConversions)
+    
+    // Process files one by one (in a real app, you might want to process them in parallel)
+    for (let i = 0; i < files.length; i++) {
+      const file = files[i]
+      const conversionId = newConversions[i].id
+      
+      try {
+        // Update status to processing
+        setConversions(prev => 
+          prev.map(c => 
+            c.id === conversionId 
+              ? { ...c, status: 'processing', progress: 10 }
+              : c
+          )
+        )
+        
+        // Create form data for API call
+        const formData = new FormData()
+        formData.append('file', file)
+        formData.append('options', JSON.stringify(options))
+        
+        // Determine which API endpoint to use based on file type
+        const fileType = getFileType(file.name)
+        let endpoint = ''
+        
+        switch (fileType) {
+          case 'image':
+            endpoint = '/api/convert/image'
+            break
+          case 'video':
+            endpoint = '/api/convert/video'
+            break
+          case 'archive':
+            endpoint = '/api/compress/archive'
+            break
+          default:
+            endpoint = '/api/convert/document'
+        }
+        
+        // Update progress
+        setConversions(prev => 
+          prev.map(c => 
+            c.id === conversionId 
+              ? { ...c, progress: 30 }
+              : c
+          )
+        )
+        
+        // Call API
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          body: formData
+        })
+        
+        if (!response.ok) {
+          throw new Error('Conversion failed')
+        }
+        
+        // Update progress
+        setConversions(prev => 
+          prev.map(c => 
+            c.id === conversionId 
+              ? { ...c, progress: 70 }
+              : c
+          )
+        )
+        
+        const result = await response.json()
+        
+        // Update progress to completed
+        setConversions(prev => 
+          prev.map(c => 
+            c.id === conversionId 
+              ? { ...c, status: 'completed', progress: 100, newSize: result.size }
+              : c
+          )
+        )
+        
+        // Add to results
+        setResults(prev => [...prev, {
+          id: conversionId,
+          filename: result.filename,
+          originalFilename: file.name,
+          url: result.url,
+          size: result.size,
+          originalSize: file.size,
+          type: result.type
+        }])
+        
+        toast.success(`${file.name} converted successfully!`)
+      } catch (error) {
+        console.error('Conversion error:', error)
+        
+        // Update status to failed
+        setConversions(prev => 
+          prev.map(c => 
+            c.id === conversionId 
+              ? { 
+                  ...c, 
+                  status: 'failed', 
+                  error: error instanceof Error ? error.message : 'Unknown error'
+                }
+              : c
+          )
+        )
+        
+        toast.error(`Failed to convert ${file.name}`)
+      }
+    }
+    
+    setIsConverting(false)
+  }
+
+  const handleDownload = (id: string) => {
+    const result = results.find(r => r.id === id)
+    if (!result) return
+    
+    // Create a temporary link and trigger download
+    const link = document.createElement('a')
+    link.href = result.url
+    link.download = result.filename
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+  }
+
+  const handlePreview = (id: string) => {
+    const result = results.find(r => r.id === id)
+    if (!result || !result.type.startsWith('image/')) return
+    
+    // Open preview in a new tab
+    window.open(result.url, '_blank')
+  }
+
+  const handleClear = () => {
+    setResults([])
+    setConversions([])
+    setFiles([])
+  }
+
+  if (status === 'loading') {
+    return (
+      <div className="flex items-center justify-center min-h-screen">
+        <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-blue-500"></div>
+      </div>
+    )
+  }
+
+  return (
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-900 relative overflow-hidden">
+      <Background3D />
+      
+      <div className="container mx-auto px-4 py-8 relative z-10">
+        <motion.div
+          initial={{ opacity: 0, y: 20 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.5 }}
+          className="text-center mb-10"
+        >
+          <h1 className="text-4xl font-bold text-gray-900 dark:text-white mb-4">
+            File Converter & Compressor
+          </h1>
+          <p className="text-lg text-gray-600 dark:text-gray-300 max-w-2xl mx-auto">
+            Convert and compress your files with ease. Supports images, videos, archives, and documents.
+            Powered by GPU acceleration for faster processing.
+          </p>
+        </motion.div>
+        
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+          <div className="lg:col-span-2 space-y-8">
+            <FileUploader onFilesChange={handleFilesChange} />
+            
+            <ProgressBar conversions={conversions} />
+            
+            <ResultDisplay
+              results={results}
+              onClear={handleClear}
+              onDownload={handleDownload}
+              onPreview={handlePreview}
+            />
+          </div>
+          
+          <div>
+            <ConversionOptions
+              files={files}
+              onConvert={handleConvert}
+              isConverting={isConverting}
+            />
+          </div>
+        </div>
+      </div>
+    </div>
+  )
+}
+```
+
+### 4.12 API Routes for File Processing
+
+Create `app/api/convert/image/route.ts`:
+
+```typescript
+import { NextRequest, NextResponse } from 'next/server'
+import { writeFile, mkdir } from 'fs/promises'
+import { join } from 'path'
+import { processImage } from '@/lib/file-processing'
+import { v4 as uuidv4 } from 'uuid'
+
+export async function POST(request: NextRequest) {
+  try {
+    const data = await request.formData()
+    const file: File | null = data.get('file') as unknown as File
+    const options = JSON.parse(data.get('options') as string)
+    
+    if (!file) {
+      return NextResponse.json({ error: 'No file provided' }, { status: 400 })
+    }
+    
+    const bytes = await file.arrayBuffer()
+    const buffer = Buffer.from(bytes)
+    
+    // Create a unique filename
+    const fileId = uuidv4()
+    const inputPath = join(process.cwd(), 'temp', `${fileId}-input${file.name.substring(file.name.lastIndexOf('.'))}`)
+    const outputPath = join(process.cwd(), 'temp', `${fileId}-output.${options.outputFormat || 'jpg'}`)
+    
+    // Ensure temp directory exists
+    await mkdir(join(process.cwd(), 'temp'), { recursive: true })
+    
+    // Write the file to disk
+    await writeFile(inputPath, buffer)
+    
+    // Process the image
+    const result = await processImage(inputPath, outputPath, options)
+    
+    if (!result.success) {
+      return NextResponse.json({ error: result.error }, { status: 500 })
+    }
+    
+    // Read the processed file
+    const outputBuffer = await readFile(outputPath)
+    
+    // Clean up temp files
+    await unlink(inputPath)
+    await unlink(outputPath)
+    
+    // Return the processed file
+    return new NextResponse(outputBuffer, {
+      headers: {
+        'Content-Type': `image/${options.outputFormat || 'jpg'}`,
+        'Content-Disposition': `attachment; filename="${file.name.substring(0, file.name.lastIndexOf('.'))}.${options.outputFormat || 'jpg'}"`,
+      },
+    })
+  } catch (error) {
+    console.error('Image conversion error:', error)
+    return NextResponse.json(
+      { error: 'Failed to convert image' },
+      { status: 500 }
+    )
+  }
+}
+```
+
+Create similar routes for video, document, and archive conversions following the same pattern.
+
+### 4.13 UI Components
+
+Create a `components/ui` directory with the following components:
+
+`components/ui/button.tsx`:
+```typescript
+import * as React from "react"
+import { Slot } from "@radix-ui/react-slot"
+import { cva, type VariantProps } from "class-variance-authority"
+
+import { cn } from "@/lib/utils"
+
+const buttonVariants = cva(
+  "inline-flex items-center justify-center whitespace-nowrap rounded-md text-sm font-medium ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50",
+  {
+    variants: {
+      variant: {
+        default: "bg-primary text-primary-foreground hover:bg-primary/90",
+        destructive:
+          "bg-destructive text-destructive-foreground hover:bg-destructive/90",
+        outline:
+          "border border-input bg-background hover:bg-accent hover:text-accent-foreground",
+        secondary:
+          "bg-secondary text-secondary-foreground hover:bg-secondary/80",
+        ghost: "hover:bg-accent hover:text-accent-foreground",
+        link: "text-primary underline-offset-4 hover:underline",
+      },
+      size: {
+        default: "h-10 px-4 py-2",
+        sm: "h-9 rounded-md px-3",
+        lg: "h-11 rounded-md px-8",
+        icon: "h-10 w-10",
+      },
+    },
+    defaultVariants: {
+      variant: "default",
+      size: "default",
+    },
+  }
+)
+
+export interface ButtonProps
+  extends React.ButtonHTMLAttributes<HTMLButtonElement>,
+    VariantProps<typeof buttonVariants> {
+  asChild?: boolean
+}
+
+const Button = React.forwardRef<HTMLButtonElement, ButtonProps>(
+  ({ className, variant, size, asChild = false, ...props }, ref) => {
+    const Comp = asChild ? Slot : "button"
+    return (
+      <Comp
+        className={cn(buttonVariants({ variant, size, className }))}
+        ref={ref}
+        {...props}
+      />
+    )
+  }
+)
+Button.displayName = "Button"
+
+export { Button, buttonVariants }
+```
+
+`components/ui/card.tsx`:
+```typescript
+import * as React from "react"
+
+import { cn } from "@/lib/utils"
+
+const Card = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn(
+      "rounded-lg border bg-card text-card-foreground shadow-sm",
+      className
+    )}
+    {...props}
+  />
+))
+Card.displayName = "Card"
+
+const CardHeader = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("flex flex-col space-y-1.5 p-6", className)}
+    {...props}
+  />
+))
+CardHeader.displayName = "CardHeader"
+
+const CardTitle = React.forwardRef<
+  HTMLParagraphElement,
+  React.HTMLAttributes<HTMLHeadingElement>
+>(({ className, ...props }, ref) => (
+  <h3
+    ref={ref}
+    className={cn(
+      "text-2xl font-semibold leading-none tracking-tight",
+      className
+    )}
+    {...props}
+  />
+))
+CardTitle.displayName = "CardTitle"
+
+const CardDescription = React.forwardRef<
+  HTMLParagraphElement,
+  React.HTMLAttributes<HTMLParagraphElement>
+>(({ className, ...props }, ref) => (
+  <p
+    ref={ref}
+    className={cn("text-sm text-muted-foreground", className)}
+    {...props}
+  />
+))
+CardDescription.displayName = "CardDescription"
+
+const CardContent = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div ref={ref} className={cn("p-6 pt-0", className)} {...props} />
+))
+CardContent.displayName = "CardContent"
+
+const CardFooter = React.forwardRef<
+  HTMLDivElement,
+  React.HTMLAttributes<HTMLDivElement>
+>(({ className, ...props }, ref) => (
+  <div
+    ref={ref}
+    className={cn("flex items-center p-6 pt-0", className)}
+    {...props}
+  />
+))
+CardFooter.displayName = "CardFooter"
+
+export { Card, CardHeader, CardFooter, CardTitle, CardDescription, CardContent }
+```
+
+`components/ui/select.tsx`:
+```typescript
+"use client"
+
+import * as React from "react"
+import * as SelectPrimitive from "@radix-ui/react-select"
+import { Check, ChevronDown, ChevronUp } from "lucide-react"
+
+import { cn } from "@/lib/utils"
+
+const Select = SelectPrimitive.Root
+
+const SelectGroup = SelectPrimitive.Group
+
+const SelectValue = SelectPrimitive.Value
+
+const SelectTrigger = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Trigger>
+>(({ className, children, ...props }, ref) => (
+  <SelectPrimitive.Trigger
+    ref={ref}
+    className={cn(
+      "flex h-10 w-full items-center justify-between rounded-md border border-input bg-background px-3 py-2 text-sm ring-offset-background placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-50 [&>span]:line-clamp-1",
+      className
+    )}
+    {...props}
+  >
+    {children}
+    <SelectPrimitive.Icon asChild>
+      <ChevronDown className="h-4 w-4 opacity-50" />
+    </SelectPrimitive.Icon>
+  </SelectPrimitive.Trigger>
+))
+SelectTrigger.displayName = SelectPrimitive.Trigger.displayName
+
+const SelectScrollUpButton = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.ScrollUpButton>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.ScrollUpButton>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.ScrollUpButton
+    ref={ref}
+    className={cn(
+      "flex cursor-default items-center justify-center py-1",
+      className
+    )}
+    {...props}
+  >
+    <ChevronUp className="h-4 w-4" />
+  </SelectPrimitive.ScrollUpButton>
+))
+SelectScrollUpButton.displayName = SelectPrimitive.ScrollUpButton.displayName
+
+const SelectScrollDownButton = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.ScrollDownButton>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.ScrollDownButton>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.ScrollDownButton
+    ref={ref}
+    className={cn(
+      "flex cursor-default items-center justify-center py-1",
+      className
+    )}
+    {...props}
+  >
+    <ChevronDown className="h-4 w-4" />
+  </SelectPrimitive.ScrollDownButton>
+))
+SelectScrollDownButton.displayName =
+  SelectPrimitive.ScrollDownButton.displayName
+
+const SelectContent = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Content>
+>(({ className, children, position = "popper", ...props }, ref) => (
+  <SelectPrimitive.Portal>
+    <SelectPrimitive.Content
+      ref={ref}
+      className={cn(
+        "relative z-50 max-h-96 min-w-[8rem] overflow-hidden rounded-md border bg-popover text-popover-foreground shadow-md data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[side=bottom]:slide-in-from-top-2 data-[side=left]:slide-in-from-right-2 data-[side=right]:slide-in-from-left-2 data-[side=top]:slide-in-from-bottom-2",
+        position === "popper" &&
+          "data-[side=bottom]:translate-y-1 data-[side=left]:-translate-x-1 data-[side=right]:translate-x-1 data-[side=top]:-translate-y-1",
+        className
+      )}
+      position={position}
+      {...props}
+    >
+      <SelectScrollUpButton />
+      <SelectPrimitive.Viewport
+        className={cn(
+          "p-1",
+          position === "popper" &&
+            "h-[var(--radix-select-trigger-height)] w-full min-w-[var(--radix-select-trigger-width)]"
+        )}
+      >
+        {children}
+      </SelectPrimitive.Viewport>
+      <SelectScrollDownButton />
+    </SelectPrimitive.Content>
+  </SelectPrimitive.Portal>
+))
+SelectContent.displayName = SelectPrimitive.Content.displayName
+
+const SelectLabel = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Label>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Label>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Label
+    ref={ref}
+    className={cn("py-1.5 pl-8 pr-2 text-sm font-semibold", className)}
+    {...props}
+  />
+))
+SelectLabel.displayName = SelectPrimitive.Label.displayName
+
+const SelectItem = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Item>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Item>
+>(({ className, children, ...props }, ref) => (
+  <SelectPrimitive.Item
+    ref={ref}
+    className={cn(
+      "relative flex w-full cursor-default select-none items-center rounded-sm py-1.5 pl-8 pr-2 text-sm outline-none focus:bg-accent focus:text-accent-foreground data-[disabled]:pointer-events-none data-[disabled]:opacity-50",
+      className
+    )}
+    {...props}
+  >
+    <span className="absolute left-2 flex h-3.5 w-3.5 items-center justify-center">
+      <SelectPrimitive.ItemIndicator>
+        <Check className="h-4 w-4" />
+      </SelectPrimitive.ItemIndicator>
+    </span>
+
+    <SelectPrimitive.ItemText>{children}</SelectPrimitive.ItemText>
+  </SelectPrimitive.Item>
+))
+SelectItem.displayName = SelectPrimitive.Item.displayName
+
+const SelectSeparator = React.forwardRef<
+  React.ElementRef<typeof SelectPrimitive.Separator>,
+  React.ComponentPropsWithoutRef<typeof SelectPrimitive.Separator>
+>(({ className, ...props }, ref) => (
+  <SelectPrimitive.Separator
+    ref={ref}
+    className={cn("-mx-1 my-1 h-px bg-muted", className)}
+    {...props}
+  />
+))
+SelectSeparator.displayName = SelectPrimitive.Separator.displayName
+
+export {
+  Select,
+  SelectGroup,
+  SelectValue,
+  SelectTrigger,
+  SelectContent,
+  SelectLabel,
+  SelectItem,
+  SelectSeparator,
+  SelectScrollUpButton,
+  SelectScrollDownButton,
+}
+```
+
+`components/ui/slider.tsx`:
+```typescript
+"use client"
+
+import * as React from "react"
+import * as SliderPrimitive from "@radix-ui/react-slider"
+
+import { cn } from "@/lib/utils"
+
+const Slider = React.forwardRef<
+  React.ElementRef<typeof SliderPrimitive.Root>,
+  React.ComponentPropsWithoutRef<typeof SliderPrimitive.Root>
+>(({ className, ...props }, ref) => (
+  <SliderPrimitive.Root
+    ref={ref}
+    className={cn(
+      "relative flex w-full touch-none select-none items-center",
+      className
+    )}
+    {...props}
+  >
+    <SliderPrimitive.Track className="relative h-2 w-full grow overflow-hidden rounded-full bg-secondary">
+      <SliderPrimitive.Range className="absolute h-full bg-primary" />
+    </SliderPrimitive.Track>
+    <SliderPrimitive.Thumb className="block h-5 w-5 rounded-full border-2 border-primary bg-background ring-offset-background transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50" />
+  </SliderPrimitive.Root>
+))
+Slider.displayName = SliderPrimitive.Root.displayName
+
+export { Slider }
+```
+
+`components/ui/switch.tsx`:
+```typescript
+"use client"
+
+import * as React from "react"
+import * as SwitchPrimitives from "@radix-ui/react-switch"
+
+import { cn } from "@/lib/utils"
+
+const Switch = React.forwardRef<
+  React.ElementRef<typeof SwitchPrimitives.Root>,
+  React.ComponentPropsWithoutRef<typeof SwitchPrimitives.Root>
+>(({ className, ...props }, ref) => (
+  <SwitchPrimitives.Root
+    className={cn(
+      "peer inline-flex h-6 w-11 shrink-0 cursor-pointer items-center rounded-full border-2 border-transparent transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:ring-offset-background disabled:cursor-not-allowed disabled:opacity-50 data-[state=checked]:bg-primary data-[state=unchecked]:bg-input",
+      className
+    )}
+    {...props}
+    ref={ref}
+  >
+    <SwitchPrimitives.Thumb
+      className={cn(
+        "pointer-events-none block h-5 w-5 rounded-full bg-background shadow-lg ring-0 transition-transform data-[state=checked]:translate-x-5 data-[state=unchecked]:translate-x-0"
+      )}
+    />
+  </SwitchPrimitives.Root>
+))
+Switch.displayName = SwitchPrimitives.Root.displayName
+
+export { Switch }
+```
+
+`components/ui/tabs.tsx`:
+```typescript
+"use client"
+
+import * as React from "react"
+import * as TabsPrimitive from "@radix-ui/react-tabs"
+
+import { cn } from "@/lib/utils"
+
+const Tabs = TabsPrimitive.Root
+
+const TabsList = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.List>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.List>
+>(({ className, ...props }, ref) => (
+  <TabsPrimitive.List
+    ref={ref}
+    className={cn(
+      "inline-flex h-10 items-center justify-center rounded-md bg-muted p-1 text-muted-foreground",
+      className
+    )}
+    {...props}
+  />
+))
+TabsList.displayName = TabsPrimitive.List.displayName
+
+const TabsTrigger = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.Trigger>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Trigger>
+>(({ className, ...props }, ref) => (
+  <TabsPrimitive.Trigger
+    ref={ref}
+    className={cn(
+      "inline-flex items-center justify-center whitespace-nowrap rounded-sm px-3 py-1.5 text-sm font-medium ring-offset-background transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 disabled:pointer-events-none disabled:opacity-50 data-[state=active]:bg-background data-[state=active]:text-foreground data-[state=active]:shadow-sm",
+      className
+    )}
+    {...props}
+  />
+))
+TabsTrigger.displayName = TabsPrimitive.Trigger.displayName
+
+const TabsContent = React.forwardRef<
+  React.ElementRef<typeof TabsPrimitive.Content>,
+  React.ComponentPropsWithoutRef<typeof TabsPrimitive.Content>
+>(({ className, ...props }, ref) => (
+  <TabsPrimitive.Content
+    ref={ref}
+    className={cn(
+      "mt-2 ring-offset-background focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2",
+      className
+    )}
+    {...props}
+  />
+))
+TabsContent.displayName = TabsPrimitive.Content.displayName
+
+export { Tabs, TabsList, TabsTrigger, TabsContent }
+```
+
+### 4.14 Utility Functions
+
+Create `lib/utils.ts`:
+
+```typescript
+import { type ClassValue, clsx } from "clsx"
+import { twMerge } from "tailwind-merge"
+
+export function cn(...inputs: ClassValue[]) {
+  return twMerge(clsx(inputs))
+}
+```
+
+Create `lib/db.ts`:
+
+```typescript
+import { PrismaClient } from '@prisma/client'
+
+const globalForPrisma = globalThis as unknown as {
+  prisma: PrismaClient | undefined
+}
+
+export const prisma = globalForPrisma.prisma ?? new PrismaClient()
+
+if (process.env.NODE_ENV !== 'production') globalForPrisma.prisma = prisma
+```
+
+### 4.15 Main Layout
+
+Create `app/layout.tsx`:
+
+```typescript
+import type { Metadata } from 'next'
+import { Inter } from 'next/font/google'
+import './globals.css'
+import { Providers } from './providers'
+
+const inter = Inter({ subsets: ['latin'] })
+
+export const metadata: Metadata = {
+  title: 'File Converter & Compressor',
+  description: 'Convert and compress your files with ease. Supports images, videos, archives, and documents.',
+}
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode
+}) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body className={inter.className}>
+        <Providers>
+          {children}
+        </Providers>
+      </body>
+    </html>
+  )
+}
+```
+
+Create `app/providers.tsx`:
+
+```typescript
+'use client'
+
+import { SessionProvider } from 'next-auth/react'
+import { ThemeProvider } from 'next-themes'
+
+export function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <SessionProvider>
+      <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+        {children}
+      </ThemeProvider>
+    </SessionProvider>
+  )
+}
+```
+
+### 4.16 Global Styles
+
+Create `app/globals.css`:
+
+```css
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --background: 0 0% 100%;
+  --foreground: 222.2 84% 4.9%;
+  --card: 0 0% 100%;
+  --card-foreground: 222.2 84% 4.9%;
+  --popover: 0 0% 100%;
+  --popover-foreground: 222.2 84% 4.9%;
+  --primary: 221.2 83.2% 53.3%;
+  --primary-foreground: 210 40% 98%;
+  --secondary: 210 40% 96%;
+  --secondary-foreground: 222.2 84% 4.9%;
+  --muted: 210 40% 96%;
+  --muted-foreground: 215.4 16.3% 46.9%;
+  --accent: 210 40% 96%;
+  --accent-foreground: 222.2 84% 4.9%;
+  --destructive: 0 84.2% 60.2%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 214.3 31.8% 91.4%;
+  --input: 214.3 31.8% 91.4%;
+  --ring: 221.2 83.2% 53.3%;
+  --radius: 0.5rem;
+}
+
+.dark {
+  --background: 222.2 84% 4.9%;
+  --foreground: 210 40% 98%;
+  --card: 222.2 84% 4.9%;
+  --card-foreground: 210 40% 98%;
+  --popover: 222.2 84% 4.9%;
+  --popover-foreground: 210 40% 98%;
+  --primary: 217.2 91.2% 59.8%;
+  --primary-foreground: 222.2 84% 4.9%;
+  --secondary: 217.2 32.6% 17.5%;
+  --secondary-foreground: 210 40% 98%;
+  --muted: 217.2 32.6% 17.5%;
+  --muted-foreground: 215 20.2% 65.1%;
+  --accent: 217.2 32.6% 17.5%;
+  --accent-foreground: 210 40% 98%;
+  --destructive: 0 62.8% 30.6%;
+  --destructive-foreground: 210 40% 98%;
+  --border: 217.2 32.6% 17.5%;
+  --input: 217.2 32.6% 17.5%;
+  --ring: 224.3 76.3% 94.1%;
+}
+
+* {
+  border-color: hsl(var(--border));
+}
+
+body {
+  color: hsl(var(--foreground));
+  background: hsl(var(--background));
+}
+
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(156, 163, 175, 0.5);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(156, 163, 175, 0.7);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgba(75, 85, 99, 0.5);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgba(75, 85, 99, 0.7);
+}
+
+/* Animation for file upload */
+@keyframes pulse-border {
+  0% {
+    border-color: rgba(59, 130, 246, 0.5);
+  }
+  50% {
+    border-color: rgba(59, 130, 246, 1);
+  }
+  100% {
+    border-color: rgba(59, 130, 246, 0.5);
+  }
+}
+
+.animate-pulse-border {
+  animation: pulse-border 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+}
+
+/* 3D transform for cards */
+.card-3d {
+  transform-style: preserve-3d;
+  transition: transform 0.3s;
+}
+
+.card-3d:hover {
+  transform: rotateY(5deg) rotateX(-5deg);
+}
+
+/* Glassmorphism effect */
+.glass {
+  background: rgba(255, 255, 255, 0.1);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+}
+
+.dark .glass {
+  background: rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+```
+
+### 4.17 Environment Variables
+
+Create `.env.local`:
+
+```env
+# Database
+DATABASE_URL="postgresql://username:password@localhost:5432/file_converter"
+
+# NextAuth
+NEXTAUTH_URL="http://localhost:3000"
+NEXTAUTH_SECRET="your-secret-key"
+
+# OAuth Providers
+GOOGLE_CLIENT_ID="your-google-client-id"
+GOOGLE_CLIENT_SECRET="your-google-client-secret"
+
+# File Storage (AWS S3 or similar)
+AWS_ACCESS_KEY_ID="your-aws-access-key"
+AWS_SECRET_ACCESS_KEY="your-aws-secret-key"
+AWS_REGION="your-aws-region"
+AWS_S3_BUCKET="your-s3-bucket-name"
+
+# GPU Acceleration
+GPU_AVAILABLE="true"
+```
+
+## 5. Deployment
+
+### 5.1 Docker Setup
+
+Create `Dockerfile`:
+
+```dockerfile
+# Install dependencies only when needed
+FROM node:18-alpine AS deps
+# Check https://github.com/nodejs/docker-node/tree/b4117f9333da4138b03a546ec926ef50a31506c3#nodealpine to understand why libc6-compat might be needed.
+RUN apk add --no-cache libc6-compat
+WORKDIR /app
+
+# Install dependencies based on the preferred package manager
+COPY package.json yarn.lock* package-lock.json* pnpm-lock.yaml* ./
+RUN \
+  if [ -f yarn.lock ]; then yarn --frozen-lockfile; \
+  elif [ -f package-lock.json ]; then npm ci; \
+  elif [ -f pnpm-lock.yaml ]; then yarn global add pnpm && pnpm i --frozen-lockfile; \
+  else echo "Lockfile not found." && exit 1; \
+  fi
+
+# Rebuild the source code only when needed
+FROM node:18-alpine AS builder
+WORKDIR /app
+COPY --from=deps /app/node_modules ./node_modules
+COPY . .
+
+# Install FFmpeg for video processing
+RUN apk add --no-cache ffmpeg
+
+# Next.js collects completely anonymous telemetry data about general usage.
+# Learn more here: https://nextjs.org/telemetry
+# Uncomment the following line in case you want to disable telemetry during the build.
+# ENV NEXT_TELEMETRY_DISABLED 1
+
+RUN \
+  if [ -f yarn.lock ]; then yarn run build; \
+  elif [ -f package-lock.json ]; then npm run build; \
+  elif [ -f pnpm-lock.yaml ]; then yarn global add pnpm && pnpm run build; \
+  else echo "Lockfile not found." && exit 1; \
+  fi
+
+# Production image, copy all the files and run next
+FROM node:18-alpine AS runner
+WORKDIR /app
+
+ENV NODE_ENV production
+# Uncomment the following line in case you want to disable telemetry during runtime.
+# ENV NEXT_TELEMETRY_DISABLED 1
+
+# Install FFmpeg for video processing
+RUN apk add --no-cache ffmpeg
+
+RUN addgroup --system --gid 1001 nodejs
+RUN adduser --system --uid 1001 nextjs
+
+COPY --from=builder /app/public ./public
+
+# Set the correct permission for prerender cache
+RUN mkdir .next
+RUN chown nextjs:nodejs .next
+
+# Automatically leverage output traces to reduce image size
+# https://nextjs.org/docs/advanced-features/output-file-tracing
+COPY --from=builder --chown=nextjs:nodejs /app/.next/standalone ./
+COPY --from=builder --chown=nextjs:nodejs /app/.next/static ./.next/static
+
+USER nextjs
+
+EXPOSE 3000
+
+ENV PORT 3000
+# set hostname to localhost
+ENV HOSTNAME "0.0.0.0"
+
+# server.js is created by next build from the standalone output
+# https://nextjs.org/docs/pages/api-reference/next-config-js/output
+CMD ["node", "server.js"]
+```
+
+Create `docker-compose.yml`:
+
+```yaml
+version: '3.8'
+
+services:
+  app:
+    build: .
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=production
+      - DATABASE_URL=postgresql://postgres:password@db:5432/file_converter
+    depends_on:
+      - db
+    volumes:
+      - ./temp:/app/temp
+
+  db:
+    image: postgres:14-alpine
+    environment:
+      - POSTGRES_USER=postgres
+      - POSTGRES_PASSWORD=password
+      - POSTGRES_DB=file_converter
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+volumes:
+  postgres_data:
+```
+
+### 5.2 Deployment Instructions
+
+1. **Build and run with Docker**:
+   ```bash
+   docker-compose up -d --build
+   ```
+
+2. **Run database migrations**:
+   ```bash
+   docker-compose exec app npx prisma migrate deploy
+   ```
+
+3. **For production deployment to Vercel**:
+   - Push your code to a GitHub repository
+   - Connect your Vercel account to the repository
+   - Configure environment variables in Vercel dashboard
+   - Deploy
+
+4. **For production deployment to a custom server**:
+   - Build the application: `npm run build`
+   - Start the production server: `npm start`
+   - Use a process manager like PM2 to keep the app running: `pm2 start npm --name "file-converter" -- start`
+
+## 6. Performance Optimization
+
+1. **GPU Acceleration**:
+   - Implement WebGPU for client-side image processing
+   - Use server-side GPU libraries for video processing
+   - Add GPU detection and fallback to CPU processing
+
+2. **Caching**:
+   - Use Redis to cache conversion results
+   - Implement CDN for static assets
+   - Cache API responses with appropriate headers
+
+3. **File Processing**:
+   - Process files in parallel when possible
+   - Implement streaming for large files
+   - Use worker threads for CPU-intensive tasks
+
+4. **Database Optimization**:
+   - Add appropriate indexes
+   - Implement connection pooling
+   - Use read replicas for scaling
+
+## 7. Security Considerations
+
+1. **File Upload Security**:
+   - Validate file types and sizes
+   - Scan for malware
+   - Store files outside the web root
+
+2. **Authentication & Authorization**:
+   - Implement rate limiting
+   - Use secure session management
+   - Add CSRF protection
+
+3. **Data Protection**:
+   - Encrypt sensitive data
+   - Implement proper access controls
+   - Regularly update dependencies
+
+## 8. Additional Features to Consider
+
+1. **Batch Processing**:
+   - Queue system for processing multiple files
+   - Progress tracking for batch jobs
+   - Email notifications when batch jobs complete
+
+2. **Advanced Editing**:
+   - Image editing tools (crop, rotate, filters)
+   - Video trimming and editing
+   - Document merging and splitting
+
+3. **Integration Options**:
+   - API for third-party integration
+   - Cloud storage integration (Google Drive, Dropbox)
+   - Social media sharing options
+
+4. **Analytics**:
+   - Usage statistics
+   - Conversion success rates
+   - Performance metrics
+
+This comprehensive file converter and compressor application includes all the features you requested:
+
+1. Support for multiple file types (images, videos, archives, documents)
+2. Batch conversion capabilities
+3. Responsive design with modern UI
+4. 3D GPU-accelerated elements using Three.js
+5. GPU acceleration for faster processing
+6. Clean, enterprise-grade interface
+7. Animations using Framer Motion
+
+The application is built with Next.js 14, uses modern React patterns, and includes proper error handling, progress tracking, and a polished user experience.

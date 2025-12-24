@@ -1,0 +1,606 @@
+
+> converter@0.1.0 dev
+> next dev
+
+ΓÜá `experimental.middlewareClientMaxBodySize` is deprecated. Please use `experimental.proxyClientMaxBodySize` instead in next.config.ts.
+Γû▓ Next.js 16.1.1 (Turbopack)
+- Local:         http://localhost:3000
+- Network:       http://100.89.220.110:3000
+- Environments: .env
+- Experiments (use with caution):
+  ┬╖ middlewareClientMaxBodySize: 1073741824
+  ┬╖ serverActions
+
+Γ£ô Starting...
+ΓÜá The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
+Γ£ô Ready in 1829ms
+ GET /youtube?id=0920723f-a14e-45e7-9138-f74e08b6231b&vscodeBrowserReqId=1766543518827 200 in 670ms (compile: 357ms, proxy.ts: 86ms, render: 227ms)
+ GET /api/auth/session 200 in 2.1s (compile: 2.0s, proxy.ts: 15ms, render: 39ms)
+[YouTube] Initializing Innertube...
+[YouTube] Action: info, VideoID: bsXSFZnk078
+[YouTube] Found 21 video formats and 12 audio formats
+ POST /api/youtube 200 in 1176ms (compile: 378ms, proxy.ts: 9ms, render: 789ms)
+[YouTube] Action: download, VideoID: bsXSFZnk078
+[YouTube] Getting video info for download...
+[YOUTUBEJS][Text]: Unable to find matching run for attachment run. Skipping... {
+  attachment_run: {
+    startIndex: 12,
+    element: { type: [Object], properties: [Object] },
+    alignment: 'ALIGNMENT_VERTICAL_CENTER'
+  },
+  input_data: {
+    content: 'Medy Renaldy and Manza Project',
+    styleRuns: [ [Object], [Object] ],
+    attachmentRuns: [ [Object] ]
+  },
+  parsed_runs: [ { text: 'Medy Renaldy and Manza Project', startIndex: 0 } ]
+}
+[YOUTUBEJS][Parser]: Error: VideoDescriptionGamingSection not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class VideoDescriptionGamingSection extends YTNode {
+  static type = 'VideoDescriptionGamingSection';
+
+  section_title: Text;
+  media_lockups: ObservedArray<YTNodes.MediaLockup> | null;
+  topic_link: YTNodes.TopicLink | null;
+
+  constructor(data: RawNode) {
+    super();
+    this.section_title = new Text(data.sectionTitle);
+    this.media_lockups = Parser.parse(data.mediaLockups, true, YTNodes.MediaLockup);
+    this.topic_link = Parser.parseItem(data.topicLink, YTNodes.TopicLink);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:128:30)
+  126 |             try {
+  127 |                 console.log('[YouTube] Getting video info for download...');
+> 128 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  129 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  130 |
+  131 |                 const allFormats = [ {
+  date: 2025-12-24T02:36:18.806Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: MediaLockup not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class MediaLockup extends YTNode {
+  static type = 'MediaLockup';
+
+  title: Text;
+  subtitle: Text;
+  thumbnail_details: Thumbnail[];
+  author: Author;
+
+  constructor(data: RawNode) {
+    super();
+    this.title = new Text(data.title);
+    this.subtitle = new Text(data.subtitle);
+    this.thumbnail_details = Thumbnail.fromResponse(data.thumbnailDetails);
+    this.author = new Author(data.endpoint, undefined);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:128:30)
+  126 |             try {
+  127 |                 console.log('[YouTube] Getting video info for download...');
+> 128 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  129 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  130 |
+  131 |                 const allFormats = [ {
+  date: 2025-12-24T02:36:19.063Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: TopicLink not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class TopicLink extends YTNode {
+  static type = 'TopicLink';
+
+  title: Text;
+  thumbnail_details: Thumbnail[];
+  call_to_action_icon: {
+    icon_type: string
+  };
+  author: Author;
+
+  constructor(data: RawNode) {
+    super();
+    this.title = new Text(data.title);
+    this.thumbnail_details = Thumbnail.fromResponse(data.thumbnailDetails);
+    this.call_to_action_icon = {
+      icon_type: data.callToActionIcon.iconType
+    };
+    this.author = new Author(data.endpoint, undefined);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:128:30)
+  126 |             try {
+  127 |                 console.log('[YouTube] Getting video info for download...');
+> 128 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  129 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  130 |
+  131 |                 const allFormats = [ {
+  date: 2025-12-24T02:36:19.175Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: Type mismatch, got VideoDescriptionGamingSection expected VideoDescriptionHeader | ExpandableVideoDescriptionBody | VideoDescriptionMusicSection | VideoDescriptionInfocardsSection | VideoDescriptionCourseSection | VideoDescriptionTranscriptSection | VideoDescriptionTranscriptSection | HorizontalCardList | ReelShelf | VideoAttributesSectionView | HowThisWasMadeSectionView.
+    at async POST (src\app\api\youtube\route.ts:128:30)
+  126 |             try {
+  127 |                 console.log('[YouTube] Getting video info for download...');
+> 128 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  129 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  130 |
+  131 |                 const allFormats = [ {
+  date: 2025-12-24T02:36:19.257Z,
+  version: '16.0.1',
+  info: [Object]
+}
+[YouTube] Total formats available: 33
+[YouTube] Sample format keys: itag, url, width, height, last_modified, last_modified_ms, content_length, quality, xtags, drm_families
+[YouTube] Downloading video (quality: 299)...
+[YouTube] Using itag: 299
+[YouTube] Video format keys: itag, url, width, height, last_modified, last_modified_ms, content_length, quality, xtags, drm_families, fps, quality_label, projection_type, average_bitrate, bitrate, spatial_audio_type, target_duration_dec, fair_play_key_uri, stereo_layout, max_dvr_duration_sec, high_replication, audio_quality, approx_duration_ms, audio_sample_rate, audio_channels, loudness_db, signature_cipher, is_drc, drm_track_type, distinct_params, track_absolute_loudness_lkfs, mime_type, is_type_otf, init_range, index_range, cipher, audio_track, has_audio, has_video, has_text, language, is_dubbed, is_auto_dubbed, is_descriptive, is_secondary, is_original, color_info, caption_track
+[YouTube] Video.url type: undefined, falsy: true
+[YouTube] Video has signature_cipher: false
+[YouTube] Video has cipher: false
+[YouTube] Video URL available: false
+[YouTube] Video URL starts with: N/A
+[YouTube] Download error: Video URL not available - unable to extract or decipher
+ POST /api/youtube 500 in 1270ms (compile: 6ms, proxy.ts: 6ms, render: 1258ms)
+[YouTube] Action: download, VideoID: bsXSFZnk078
+[YouTube] Getting video info for download...
+[YOUTUBEJS][Text]: Unable to find matching run for attachment run. Skipping... {
+  attachment_run: {
+    startIndex: 12,
+    element: { type: [Object], properties: [Object] },
+    alignment: 'ALIGNMENT_VERTICAL_CENTER'
+  },
+  input_data: {
+    content: 'Medy Renaldy and Manza Project',
+    styleRuns: [ [Object], [Object] ],
+    attachmentRuns: [ [Object] ]
+  },
+  parsed_runs: [ { text: 'Medy Renaldy and Manza Project', startIndex: 0 } ]
+}
+[YOUTUBEJS][Parser]: Error: Type mismatch, got VideoDescriptionGamingSection expected VideoDescriptionHeader | ExpandableVideoDescriptionBody | VideoDescriptionMusicSection | VideoDescriptionInfocardsSection | VideoDescriptionCourseSection | VideoDescriptionTranscriptSection | VideoDescriptionTranscriptSection | HorizontalCardList | ReelShelf | VideoAttributesSectionView | HowThisWasMadeSectionView.
+    at async POST (src\app\api\youtube\route.ts:128:30)
+  126 |             try {
+  127 |                 console.log('[YouTube] Getting video info for download...');
+> 128 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  129 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  130 |
+  131 |                 const allFormats = [ {
+  date: 2025-12-24T02:36:22.014Z,
+  version: '16.0.1',
+  info: [Object]
+}
+[YouTube] Total formats available: 33
+[YouTube] Sample format keys: itag, url, width, height, last_modified, last_modified_ms, content_length, quality, xtags, drm_families
+[YouTube] Downloading audio as MP3...
+[YouTube] Selected audio itag: 251, bitrate: 163060
+[YouTube] Audio format keys: itag, url, width, height, last_modified, last_modified_ms, content_length, quality, xtags, drm_families, fps, quality_label, projection_type, average_bitrate, bitrate, spatial_audio_type, target_duration_dec, fair_play_key_uri, stereo_layout, max_dvr_duration_sec, high_replication, audio_quality, approx_duration_ms, audio_sample_rate, audio_channels, loudness_db, signature_cipher, is_drc, drm_track_type, distinct_params, track_absolute_loudness_lkfs, mime_type, is_type_otf, init_range, index_range, cipher, audio_track, has_audio, has_video, has_text, language, is_dubbed, is_auto_dubbed, is_descriptive, is_secondary, is_original, color_info, caption_track
+[YouTube] Audio URL available: false
+[YouTube] Audio URL starts with: N/A
+[YouTube] Download error: Audio URL not available - unable to extract or decipher
+ POST /api/youtube 500 in 686ms (compile: 7ms, proxy.ts: 9ms, render: 670ms)
+ POST /api/youtube 400 in 14ms (compile: 3ms, proxy.ts: 5ms, render: 6ms)
+ POST /api/youtube 400 in 218ms (compile: 199ms, proxy.ts: 8ms, render: 11ms)
+[YouTube] Initializing Innertube...
+[YouTube] Action: download, VideoID: bsXSFZnk078
+[YouTube] Getting video info for download...
+[YOUTUBEJS][Parser]: Error: VideoDescriptionGamingSection not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class VideoDescriptionGamingSection extends YTNode {
+  static type = 'VideoDescriptionGamingSection';
+
+  section_title: Text;
+  media_lockups: ObservedArray<YTNodes.MediaLockup> | null;
+  topic_link: YTNodes.TopicLink | null;
+
+  constructor(data: RawNode) {
+    super();
+    this.section_title = new Text(data.sectionTitle);
+    this.media_lockups = Parser.parse(data.mediaLockups, true, YTNodes.MediaLockup);
+    this.topic_link = Parser.parseItem(data.topicLink, YTNodes.TopicLink);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:41:00.832Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: MediaLockup not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class MediaLockup extends YTNode {
+  static type = 'MediaLockup';
+
+  title: Text;
+  subtitle: Text;
+  thumbnail_details: Thumbnail[];
+  author: Author;
+
+  constructor(data: RawNode) {
+    super();
+    this.title = new Text(data.title);
+    this.subtitle = new Text(data.subtitle);
+    this.thumbnail_details = Thumbnail.fromResponse(data.thumbnailDetails);
+    this.author = new Author(data.endpoint, undefined);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:41:01.016Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: TopicLink not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class TopicLink extends YTNode {
+  static type = 'TopicLink';
+
+  title: Text;
+  thumbnail_details: Thumbnail[];
+  call_to_action_icon: {
+    icon_type: string
+  };
+  author: Author;
+
+  constructor(data: RawNode) {
+    super();
+    this.title = new Text(data.title);
+    this.thumbnail_details = Thumbnail.fromResponse(data.thumbnailDetails);
+    this.call_to_action_icon = {
+      icon_type: data.callToActionIcon.iconType
+    };
+    this.author = new Author(data.endpoint, undefined);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:41:01.154Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: Type mismatch, got VideoDescriptionGamingSection expected VideoDescriptionHeader | ExpandableVideoDescriptionBody | VideoDescriptionMusicSection | VideoDescriptionInfocardsSection | VideoDescriptionCourseSection | VideoDescriptionTranscriptSection | VideoDescriptionTranscriptSection | HorizontalCardList | ReelShelf | VideoAttributesSectionView | HowThisWasMadeSectionView.
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:41:01.260Z,
+  version: '16.0.1',
+  info: [Object]
+}
+[YouTube] Total formats available: 33
+[YouTube] Sample format keys: itag, url, width, height, last_modified, last_modified_ms, content_length, quality, xtags, drm_families
+[YouTube] Downloading video (quality: undefined)...
+[YouTube] Using best quality: 1080p
+[YouTube] Video format keys: itag, url, width, height, last_modified, last_modified_ms, content_length, quality, xtags, drm_families, fps, quality_label, projection_type, average_bitrate, bitrate, spatial_audio_type, target_duration_dec, fair_play_key_uri, stereo_layout, max_dvr_duration_sec, high_replication, audio_quality, approx_duration_ms, audio_sample_rate, audio_channels, loudness_db, signature_cipher, is_drc, drm_track_type, distinct_params, track_absolute_loudness_lkfs, mime_type, is_type_otf, init_range, index_range, cipher, audio_track, has_audio, has_video, has_text, language, is_dubbed, is_auto_dubbed, is_descriptive, is_secondary, is_original, color_info, caption_track
+[YouTube] Attempting direct URL access...
+[YouTube] Video.url available: false
+[YouTube] Direct URL not available - attempting alternative method...
+[YouTube] Format has decipher() method, calling it...
+[YouTube] Decipher successful
+[YouTube] Decipher failed: Error: URL is malformed "". Please use only absolute URLs - https://nextjs.org/docs/messages/middleware-relative-urls
+[YouTube] Download error: Video URL not available - format does not have accessible URL or decipher method
+ POST /api/youtube 500 in 1498ms (compile: 188ms, proxy.ts: 6ms, render: 1304ms)
+[YouTube] Initializing Innertube...
+[YouTube] Action: download, VideoID: bsXSFZnk078
+[YouTube] Getting video info for download...
+[YOUTUBEJS][Text]: Unable to find matching run for attachment run. Skipping... {
+  attachment_run: {
+    startIndex: 12,
+    element: { type: [Object], properties: [Object] },
+    alignment: 'ALIGNMENT_VERTICAL_CENTER'
+  },
+  input_data: {
+    content: 'Medy Renaldy and Manza Project',
+    styleRuns: [ [Object], [Object] ],
+    attachmentRuns: [ [Object] ]
+  },
+  parsed_runs: [ { text: 'Medy Renaldy and Manza Project', startIndex: 0 } ]
+}
+[YOUTUBEJS][Parser]: Error: VideoDescriptionGamingSection not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class VideoDescriptionGamingSection extends YTNode {
+  static type = 'VideoDescriptionGamingSection';
+
+  section_title: Text;
+  media_lockups: ObservedArray<YTNodes.MediaLockup> | null;
+  topic_link: YTNodes.TopicLink | null;
+
+  constructor(data: RawNode) {
+    super();
+    this.section_title = new Text(data.sectionTitle);
+    this.media_lockups = Parser.parse(data.mediaLockups, true, YTNodes.MediaLockup);
+    this.topic_link = Parser.parseItem(data.topicLink, YTNodes.TopicLink);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:42:03.797Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: MediaLockup not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class MediaLockup extends YTNode {
+  static type = 'MediaLockup';
+
+  title: Text;
+  subtitle: Text;
+  thumbnail_details: Thumbnail[];
+  author: Author;
+
+  constructor(data: RawNode) {
+    super();
+    this.title = new Text(data.title);
+    this.subtitle = new Text(data.subtitle);
+    this.thumbnail_details = Thumbnail.fromResponse(data.thumbnailDetails);
+    this.author = new Author(data.endpoint, undefined);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:42:03.949Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: TopicLink not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class TopicLink extends YTNode {
+  static type = 'TopicLink';
+
+  title: Text;
+  thumbnail_details: Thumbnail[];
+  call_to_action_icon: {
+    icon_type: string
+  };
+  author: Author;
+
+  constructor(data: RawNode) {
+    super();
+    this.title = new Text(data.title);
+    this.thumbnail_details = Thumbnail.fromResponse(data.thumbnailDetails);
+    this.call_to_action_icon = {
+      icon_type: data.callToActionIcon.iconType
+    };
+    this.author = new Author(data.endpoint, undefined);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:42:04.034Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: Type mismatch, got VideoDescriptionGamingSection expected VideoDescriptionHeader | ExpandableVideoDescriptionBody | VideoDescriptionMusicSection | VideoDescriptionInfocardsSection | VideoDescriptionCourseSection | VideoDescriptionTranscriptSection | VideoDescriptionTranscriptSection | HorizontalCardList | ReelShelf | VideoAttributesSectionView | HowThisWasMadeSectionView.
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:42:04.244Z,
+  version: '16.0.1',
+  info: [Object]
+}
+[YouTube] Total formats available: 33
+[YouTube] Sample format keys: itag, url, width, height, last_modified, last_modified_ms, content_length, quality, xtags, drm_families
+[YouTube] Downloading video (quality: undefined)...
+[YouTube] Using best quality: 1080p
+[YouTube] Video format keys: itag, url, width, height, last_modified, last_modified_ms, content_length, quality, xtags, drm_families, fps, quality_label, projection_type, average_bitrate, bitrate, spatial_audio_type, target_duration_dec, fair_play_key_uri, stereo_layout, max_dvr_duration_sec, high_replication, audio_quality, approx_duration_ms, audio_sample_rate, audio_channels, loudness_db, signature_cipher, is_drc, drm_track_type, distinct_params, track_absolute_loudness_lkfs, mime_type, is_type_otf, init_range, index_range, cipher, audio_track, has_audio, has_video, has_text, language, is_dubbed, is_auto_dubbed, is_descriptive, is_secondary, is_original, color_info, caption_track
+[YouTube] Attempting innertube.download() with format itag...
+[YouTube] innertube.download() failed: No matching formats found
+[YouTube] Trying decipher() method as last resort...
+[YouTube] Decipher returned empty URL
+[YouTube] Download preparation failed: Error: Unable to obtain download URL from any method
+[YouTube] Download error: Unable to obtain download URL from any method
+ POST /api/youtube 500 in 1530ms (compile: 147ms, proxy.ts: 6ms, render: 1376ms)
+[YouTube] Initializing Innertube...
+[YouTube] Action: download, VideoID: bsXSFZnk078
+[YouTube] Getting video info for download...
+[YOUTUBEJS][Text]: Unable to find matching run for attachment run. Skipping... {
+  attachment_run: {
+    startIndex: 12,
+    element: { type: [Object], properties: [Object] },
+    alignment: 'ALIGNMENT_VERTICAL_CENTER'
+  },
+  input_data: {
+    content: 'Medy Renaldy and Manza Project',
+    styleRuns: [ [Object], [Object] ],
+    attachmentRuns: [ [Object] ]
+  },
+  parsed_runs: [ { text: 'Medy Renaldy and Manza Project', startIndex: 0 } ]
+}
+[YOUTUBEJS][Parser]: Error: VideoDescriptionGamingSection not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class VideoDescriptionGamingSection extends YTNode {
+  static type = 'VideoDescriptionGamingSection';
+
+  section_title: Text;
+  media_lockups: ObservedArray<YTNodes.MediaLockup> | null;
+  topic_link: YTNodes.TopicLink | null;
+
+  constructor(data: RawNode) {
+    super();
+    this.section_title = new Text(data.sectionTitle);
+    this.media_lockups = Parser.parse(data.mediaLockups, true, YTNodes.MediaLockup);
+    this.topic_link = Parser.parseItem(data.topicLink, YTNodes.TopicLink);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:42:40.368Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: MediaLockup not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class MediaLockup extends YTNode {
+  static type = 'MediaLockup';
+
+  title: Text;
+  subtitle: Text;
+  thumbnail_details: Thumbnail[];
+  author: Author;
+
+  constructor(data: RawNode) {
+    super();
+    this.title = new Text(data.title);
+    this.subtitle = new Text(data.subtitle);
+    this.thumbnail_details = Thumbnail.fromResponse(data.thumbnailDetails);
+    this.author = new Author(data.endpoint, undefined);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:42:40.521Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: TopicLink not found!
+This is a bug, want to help us fix it? Follow the instructions at https://github.com/LuanRT/YouTube.js/blob/main/docs/updating-the-parser.md or report it at https://github.com/LuanRT/YouTube.js/issues!
+Introspected and JIT generated this class in the meantime:
+class TopicLink extends YTNode {
+  static type = 'TopicLink';
+
+  title: Text;
+  thumbnail_details: Thumbnail[];
+  call_to_action_icon: {
+    icon_type: string
+  };
+  author: Author;
+
+  constructor(data: RawNode) {
+    super();
+    this.title = new Text(data.title);
+    this.thumbnail_details = Thumbnail.fromResponse(data.thumbnailDetails);
+    this.call_to_action_icon = {
+      icon_type: data.callToActionIcon.iconType
+    };
+    this.author = new Author(data.endpoint, undefined);
+  }
+}
+
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:42:40.615Z,
+  version: '16.0.1',
+  info: undefined
+}
+[YOUTUBEJS][Parser]: Error: Type mismatch, got VideoDescriptionGamingSection expected VideoDescriptionHeader | ExpandableVideoDescriptionBody | VideoDescriptionMusicSection | VideoDescriptionInfocardsSection | VideoDescriptionCourseSection | VideoDescriptionTranscriptSection | VideoDescriptionTranscriptSection | HorizontalCardList | ReelShelf | VideoAttributesSectionView | HowThisWasMadeSectionView.
+    at async POST (src\app\api\youtube\route.ts:131:30)
+  129 |             try {
+  130 |                 console.log('[YouTube] Getting video info for download...');
+> 131 |                 const info = await innertube.getInfo(videoId);
+      |                              ^
+  132 |                 const title = (info.basic_info?.title || 'video').replace(/[^\w\s]/gi, '').substring(0, 100);
+  133 |
+  134 |                 const allFormats = [ {
+  date: 2025-12-24T02:42:40.733Z,
+  version: '16.0.1',
+  info: [Object]
+}
+[YouTube] Total formats available: 33
+[YouTube] Sample format keys: itag, url, width, height, last_modified, last_modified_ms, content_length, quality, xtags, drm_families
+[YouTube] Downloading video (quality: undefined)...
+[YouTube] Using best quality: 1080p
+[YouTube] Video format keys: itag, url, width, height, last_modified, last_modified_ms, content_length, quality, xtags, drm_families, fps, quality_label, projection_type, average_bitrate, bitrate, spatial_audio_type, target_duration_dec, fair_play_key_uri, stereo_layout, max_dvr_duration_sec, high_replication, audio_quality, approx_duration_ms, audio_sample_rate, audio_channels, loudness_db, signature_cipher, is_drc, drm_track_type, distinct_params, track_absolute_loudness_lkfs, mime_type, is_type_otf, init_range, index_range, cipher, audio_track, has_audio, has_video, has_text, language, is_dubbed, is_auto_dubbed, is_descriptive, is_secondary, is_original, color_info, caption_track
+[YouTube] Format debugging:
+  - itag: 299
+  - url: undefined
+  - cipher: undefined
+  - signature_cipher: undefined
+  - mimeType: video/mp4; codecs="avc1.64002a"
+[YouTube] Raw format (partial): {"itag":299,"width":1920,"height":1080,"last_modified":"2025-12-19T17:24:21.594Z","last_modified_ms":"1766165061594667","content_length":1578038997,"quality":"hd1080","fps":60,"quality_label":"1080p60","projection_type":"RECTANGULAR","average_bitrate":3999211,"bitrate":6761728,"approx_duration_ms":3156700,"mime_type":"video/mp4; codecs=\"avc1.64002a\"","is_type_otf":false,"init_range":{"start":0,"end":741},"index_range":{"start":742,"end":7661},"has_audio":false,"has_video":true,"has_text":false}
+[YouTube] Download error: YouTube content protection: Direct URL extraction not available. The YouTube.js library requires the official Innertube player and complex signature decryption. Consider using yt-dlp as a backend service instead.
+ POST /api/youtube 500 in 2.1s (compile: 159ms, proxy.ts: 9ms, render: 1889ms)
